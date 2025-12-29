@@ -1,14 +1,16 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { SavedGeneration, ApiLog, PhysicalOrder } from '../types';
 
-// We pull these from the environment. If they are missing, we don't crash.
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
+// We pull these from the environment.
+// In Vite, defined variables can sometimes be the string "undefined" if missing.
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+const isValid = (val: any): val is string => 
+  typeof val === 'string' && val.length > 0 && val !== 'undefined';
 
 // Only create the client if we have the actual data. 
-// This prevents the "supabaseUrl is required" error.
-export const supabase = (supabaseUrl.length > 0 && supabaseAnonKey.length > 0) 
+export const supabase = (isValid(supabaseUrl) && isValid(supabaseAnonKey)) 
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
 

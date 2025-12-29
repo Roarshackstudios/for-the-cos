@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AppStep, AppState, Category, Subcategory, CardStats, AdminSettings, SavedGeneration, ApiLog, PhysicalOrder, User } from './types';
 import { CATEGORIES } from './constants';
@@ -595,21 +594,21 @@ const App: React.FC = () => {
               <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1 shadow-[0_0_10px_rgba(59,130,246,0.2)]">1</div>
               <div className="space-y-1">
                 <p className="text-sm text-white font-bold uppercase tracking-tight">Access the Secrets Tab</p>
-                <p className="text-xs text-zinc-500 leading-relaxed">Find the "Secrets" or "Environment Variables" panel in your code editor's sidebar.</p>
+                <p className="text-xs text-zinc-500 leading-relaxed">Find the &quot;Secrets&quot; or &quot;Environment Variables&quot; panel in your code editor&apos;s sidebar.</p>
               </div>
             </li>
             <li className="flex items-start space-x-4 group">
               <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1">2</div>
               <div className="space-y-1">
                 <p className="text-sm text-white font-bold uppercase tracking-tight">Configure SUPABASE_URL</p>
-                <p className="text-xs text-zinc-500 leading-relaxed">Copy the "Project URL" from Supabase Settings > API and add it as a new secret.</p>
+                <p className="text-xs text-zinc-500 leading-relaxed">Copy the &quot;Project URL&quot; from Supabase Settings &gt; API and add it as a new secret.</p>
               </div>
             </li>
             <li className="flex items-start space-x-4 group">
               <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1">3</div>
               <div className="space-y-1">
                 <p className="text-sm text-white font-bold uppercase tracking-tight">Configure SUPABASE_ANON_KEY</p>
-                <p className="text-xs text-zinc-500 leading-relaxed">Copy the "anon" public key from Supabase Settings > API and add it as a new secret.</p>
+                <p className="text-xs text-zinc-500 leading-relaxed">Copy the &quot;anon&quot; public key from Supabase Settings &gt; API and add it as a new secret.</p>
               </div>
             </li>
           </ul>
@@ -712,7 +711,7 @@ const App: React.FC = () => {
                  </div>
                  <div>
                    <h2 className="text-xl font-orbitron font-bold uppercase italic tracking-tighter">Order Physical Archive</h2>
-                   <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Premium Glossy Finish • 11" x 17" • Free Shipping</p>
+                   <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Premium Glossy Finish • 11&quot; x 17&quot; • Free Shipping</p>
                  </div>
               </div>
 
