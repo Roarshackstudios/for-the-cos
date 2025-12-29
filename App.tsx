@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { AppStep, AppState, Category, Subcategory, CardStats, AdminSettings, SavedGeneration, ApiLog, PhysicalOrder, User } from './types';
+import { AppStep, AppState, Category, Subcategory, CardStats, AdminSettings, SavedGeneration, ApiLog, PhysicalOrder } from './types';
 import { CATEGORIES } from './constants';
 import PhotoStep from './components/PhotoStep';
 import Carousel from './components/Carousel';
@@ -679,7 +679,7 @@ const App: React.FC = () => {
                {state.step === AppStep.LOGIN ? (
                  <button onClick={() => { setState(prev => ({ ...prev, step: AppStep.SIGNUP })); setAuthError(''); }} className="text-zinc-500 hover:text-white text-xs font-bold uppercase tracking-widest transition-all">New Subject? Register Bio-ID</button>
                ) : (
-                 <button onClick={() => { setState(prev => ({ ...prev, step: AppStep.LOGIN })); setAuthError(''); }} className="text-zinc-500 hover:text-white text-xs font-bold uppercase tracking-widest transition-all">Identity Exists? Return to Gate</button>
+                 <button onClick={() => { setState(prev => ({ ...prev, step: AppStep.LOGIN })); setAuthError(''); }} className="text-zinc-500 hover:text-white text-xs font-bold uppercase tracking-widest transition-all">Identity Exist? Return to Gate</button>
                )}
             </div>
           </div>
@@ -711,7 +711,7 @@ const App: React.FC = () => {
                  </div>
                  <div>
                    <h2 className="text-xl font-orbitron font-bold uppercase italic tracking-tighter">Order Physical Archive</h2>
-                   <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Premium Glossy Finish • 11&quot; x 17&quot; • Free Shipping</p>
+                   <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Premium Glossy Finish • 11" x 17" • Free Shipping</p>
                  </div>
               </div>
 
@@ -1065,11 +1065,11 @@ const App: React.FC = () => {
               {state.resultImage && state.sourceImage && state.stats && (
                 <>
                   <div ref={rawImageRef} style={{ width: '768px', height: '1024px', overflow: 'hidden', position: 'relative' }}>
-                    <img src={state.resultImage} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${state.resultScale}) translate(${state.resultOffset.x}%, ${state.resultOffset.y}%)` }} />
+                    <img src={state.resultImage} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${state.resultScale}) translate(${state.resultOffset.x}%, ${state.resultOffset.y}%)` }} alt="Raw" />
                   </div>
                   <div ref={comicExportRef} style={{ width: '800px', height: '1200px', overflow: 'hidden', position: 'relative', backgroundColor: '#000' }}>
                     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                      <img src={state.resultImage} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${state.resultScale}) translate(${state.resultOffset.x}%, ${state.resultOffset.y}%)` }} />
+                      <img src={state.resultImage} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${state.resultScale}) translate(${state.resultOffset.x}%, ${state.resultOffset.y}%)` }} alt="Comic Base" />
                       <ComicFrame category={state.selectedCategory?.name || "HERO"} subcategory={state.selectedSubcategory?.name || "ULTIMATE"} customTitle={state.characterName} />
                     </div>
                   </div>
