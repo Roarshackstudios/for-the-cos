@@ -71,7 +71,6 @@ Key Composition Requirements:
         imageConfig: {
           aspectRatio: "3:4" 
         },
-        // We use string literals cast to 'any' to avoid version-specific Enum naming conflicts during build.
         safetySettings: [
           { 
             category: "HARM_CATEGORY_HARASSMENT" as any, 
@@ -89,7 +88,11 @@ Key Composition Requirements:
             category: "HARM_CATEGORY_DANGEROUS_CONTENT" as any, 
             threshold: "BLOCK_NONE" as any
           },
-        ]
+          { 
+            category: "HARM_CATEGORY_CIVIC_INTEGRITY" as any, 
+            threshold: "BLOCK_NONE" as any
+          }
+        ] as any
       } as any
     });
 

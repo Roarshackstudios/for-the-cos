@@ -307,8 +307,9 @@ const App: React.FC = () => {
 
     const exportOptions = {
       pixelRatio: 2,
-      backgroundColor: '#000000'
-    };
+      backgroundColor: '#000000',
+      cacheBust: true
+    } as any;
 
     try {
       let targetRef: React.RefObject<HTMLDivElement | null> | null = null;
@@ -387,7 +388,7 @@ const App: React.FC = () => {
         }));
 
         await new Promise(r => setTimeout(r, 400));
-        const dataUrl = await toPng(targetRef.current, { pixelRatio: 1.5 });
+        const dataUrl = await toPng(targetRef.current, { pixelRatio: 1.5, cacheBust: true } as any);
         
         const genId = state.editingId || `gen-${Date.now()}`;
         await saveGeneration({
