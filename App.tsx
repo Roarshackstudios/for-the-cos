@@ -13,7 +13,6 @@ type ExportType = 'raw' | 'comic' | 'card-front' | 'card-back' | 'card-bundle';
 
 const SESSION_ID = 'user-' + Math.random().toString(36).substring(2, 9);
 const COST_PER_GENERATION = 0.015;
-const ADMIN_EMAIL = "roarshackstudios@gmail.com";
 
 const App: React.FC = () => {
   const [adminSettings, setAdminSettings] = useState<AdminSettings>(() => {
@@ -29,11 +28,8 @@ const App: React.FC = () => {
     };
   });
 
-  const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [adminTab, setAdminTab] = useState<'settings' | 'usage' | 'orders'>('settings');
   const [galleryItems, setGalleryItems] = useState<SavedGeneration[]>([]);
   const [apiLogs, setApiLogs] = useState<ApiLog[]>([]);
-  const [physicalOrders, setPhysicalOrders] = useState<PhysicalOrder[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [localMode, setLocalMode] = useState(!supabase);
@@ -106,7 +102,6 @@ const App: React.FC = () => {
   const rawImageRef = useRef<HTMLDivElement>(null);
   const comicExportRef = useRef<HTMLDivElement>(null);
   const cardFrontRef = useRef<HTMLDivElement>(null);
-  const cardBackRef = useRef<HTMLDivElement>(null);
   
   const logoUrl = "https://i.ibb.co/b43T8dM/1.png";
 
@@ -114,7 +109,6 @@ const App: React.FC = () => {
     if (state.currentUser && supabase) {
       loadGallery();
       loadApiLogs();
-      loadOrders();
     }
   }, [state.currentUser]);
 
@@ -141,14 +135,6 @@ const App: React.FC = () => {
       const logs = await getApiLogs();
       setApiLogs(logs);
     } catch (e) { console.error("Logs failed", e); }
-  };
-
-  const loadOrders = async () => {
-    if (!supabase) return;
-    try {
-      const orders = await getAllOrders();
-      setPhysicalOrders(orders);
-    } catch (e) { console.error("Orders failed", e); }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -246,7 +232,7 @@ const App: React.FC = () => {
     }, 2500);
 
     const logEntry: ApiLog = {
-      id: 'log-' + Date.now(),
+      id: crypto.randomUUID(),
       timestamp: Date.now(),
       userSession: SESSION_ID,
       model: 'gemini-2.5-flash-image',
@@ -327,7 +313,7 @@ const App: React.FC = () => {
         const dataUrl = await toPng(targetRef.current, exportOptions);
         
         if (supabase && state.currentUser) {
-          const genId = state.editingId || `gen-${Date.now()}`;
+          const genId = state.editingId || crypto.randomUUID();
           await saveGeneration({
             id: genId,
             timestamp: Date.now(),
@@ -386,7 +372,7 @@ const App: React.FC = () => {
         await new Promise(r => setTimeout(r, 400));
         const dataUrl = await toPng(targetRef.current, { pixelRatio: 1.5, cacheBust: true } as any);
         
-        const genId = state.editingId || `gen-${Date.now()}`;
+        const genId = state.editingId || crypto.randomUUID();
         await saveGeneration({
           id: genId,
           timestamp: Date.now(),
@@ -470,22 +456,22 @@ const App: React.FC = () => {
             </div>
             
             <p className="text-zinc-400 font-bold uppercase tracking-widest text-xs leading-relaxed">
-              Your Supabase Dimension is refusing the transmission. To fix this, you MUST enable the <strong>DELETE</strong> operation in your policies.
+              Your Supabase Dimension is refusing the transmission. To fix this, you MUST enable the <strong>ALL</strong> operations in your policies (Select, Insert, Update, Delete).
             </p>
 
             <div className="bg-black/40 border border-zinc-800 rounded-2xl p-6 space-y-4 font-mono text-[11px]">
               <p className="text-blue-400 font-bold"># REQUIRED CONFIGURATION:</p>
               {setupError.type === 'STORAGE' || setupError.type === 'DELETE' ? (
                 <ul className="space-y-2 text-zinc-300">
-                  <li>1. Go to Supabase Dashboard > <span className="text-white">Storage</span></li>
+                  <li>1. Go to Supabase Dashboard &gt; <span className="text-white">Storage</span></li>
                   <li>2. Select bucket: <span className="text-white font-bold">'cosplay-artifacts'</span></li>
-                  <li>3. Click <span className="text-white font-bold">Policies</span> > Edit or New Policy</li>
+                  <li>3. Click <span className="text-white font-bold">Policies</span> &gt; Edit or New Policy</li>
                   <li>4. Check ALL operations: <span className="text-green-500">SELECT, INSERT, UPDATE, DELETE</span></li>
                   <li>5. Set target role to: <span className="text-white font-bold">authenticated</span></li>
                 </ul>
               ) : (
                 <ul className="space-y-2 text-zinc-300">
-                  <li>1. Go to Supabase Dashboard > <span className="text-white">Table Editor</span></li>
+                  <li>1. Go to Supabase Dashboard &gt; <span className="text-white">Table Editor</span></li>
                   <li>2. Select table: <span className="text-white font-bold">'generations'</span></li>
                   <li>3. Click <span className="text-white font-bold">Add Policy</span> (using for authenticated users)</li>
                   <li>4. Check ALL operations: <span className="text-green-500">SELECT, INSERT, UPDATE, DELETE</span></li>
@@ -495,7 +481,7 @@ const App: React.FC = () => {
             </div>
 
             <button onClick={() => setSetupError(null)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-500 hover:text-white transition-all shadow-xl">
-              I've Checked All Boxes (Including DELETE)
+              I've Checked All Boxes
             </button>
           </div>
         </div>
@@ -533,9 +519,14 @@ const App: React.FC = () => {
           <h1 className="text-2xl font-orbitron font-bold tracking-tighter uppercase ml-4">FOR THE <span className="text-blue-500">COS</span></h1>
         </div>
         <div className="flex items-center space-x-6">
-          <div className="hidden md:flex items-center space-x-2 mr-4">
-             <div className={`w-2 h-2 rounded-full ${supabase ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
-             <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500">{supabase ? 'Sync Online' : 'Local Node'}</span>
+          <div className="flex flex-col items-end mr-4">
+             <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${supabase ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
+                <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500">{supabase ? 'Sync Online' : 'Local Node'}</span>
+             </div>
+             {!supabase && (
+               <span className="text-[7px] text-zinc-600 font-bold uppercase tracking-tighter">Keys missing in environment</span>
+             )}
           </div>
           {state.currentUser ? (
             <>

@@ -1,11 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 import { SavedGeneration, ApiLog, PhysicalOrder } from '../types';
 
+// Access environment variables defined in vite.config.ts
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 const isValid = (val: any): val is string => 
-  typeof val === 'string' && val.length > 0 && val !== 'undefined';
+  typeof val === 'string' && 
+  val.length > 0 && 
+  val !== 'undefined' && 
+  val !== 'null' &&
+  !val.startsWith('{{'); // Prevents placeholder triggers
+
+// Log initialization status for debugging
+if (!isValid(supabaseUrl) || !isValid(supabaseAnonKey)) {
+  console.warn("Supabase initialization skipped: Missing environment variables.");
+  console.debug("SUPABASE_URL status:", isValid(supabaseUrl) ? "Present" : "Missing");
+  console.debug("SUPABASE_ANON_KEY status:", isValid(supabaseAnonKey) ? "Present" : "Missing");
+} else {
+  console.info("Supabase client initialized successfully.");
+}
 
 export const supabase = (isValid(supabaseUrl) && isValid(supabaseAnonKey)) 
   ? createClient(supabaseUrl, supabaseAnonKey) 
@@ -26,7 +40,7 @@ const base64ToBlob = (base64: string): Blob => {
 };
 
 const uploadToStorage = async (base64: string, path: string): Promise<string> => {
-  if (!supabase) throw new Error("Supabase configuration missing.");
+  if (!supabase) throw new Error("Supabase connection inactive.");
   if (!base64 || base64.startsWith('http')) return base64; 
   
   try {
@@ -208,5 +222,6 @@ export const getApiLogs = async (): Promise<ApiLog[]> => {
 
 export const clearApiLogs = async (): Promise<void> => {
   if (!supabase) return;
-  await supabase.from('api_logs').delete().neq('id', '0');
+  // Use a query that matches all rows without violating UUID type constraints
+  await supabase.from('api_logs').delete().not('id', 'is', null);
 };
