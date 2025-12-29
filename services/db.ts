@@ -42,8 +42,9 @@ const uploadToStorage = async (base64: string, path: string): Promise<string> =>
 
     if (error) {
       console.error("Storage upload error:", error);
-      if (error.message.includes("row-level security")) {
-        throw new Error(`PERMISSIONS ERROR: Your Supabase Storage Bucket '${BUCKET_NAME}' has RLS enabled but no policy for 'INSERT'. Go to Supabase -> Storage -> Buckets -> ${BUCKET_NAME} -> Policies and add an 'INSERT' policy for authenticated users.`);
+      const msg = error.message.toLowerCase();
+      if (msg.includes("row-level security") || msg.includes("policy") || msg.includes("new row violates")) {
+        throw new Error(`STORAGE_PERMISSIONS: Your Supabase Storage Bucket '${BUCKET_NAME}' needs an ALL policy (SELECT, INSERT, UPDATE, DELETE) for authenticated users.`);
       }
       throw new Error(`Sync error: '${error.message}'. Ensure bucket '${BUCKET_NAME}' exists and is set to PUBLIC.`);
     }
@@ -83,8 +84,9 @@ export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
     });
 
     if (error) {
-      if (error.message.includes("row-level security")) {
-        throw new Error("PERMISSIONS ERROR: The 'generations' table has RLS enabled but no INSERT policy for your user ID.");
+      const msg = error.message.toLowerCase();
+      if (msg.includes("row-level security") || msg.includes("policy") || msg.includes("violates")) {
+        throw new Error("TABLE_PERMISSIONS: The 'generations' table needs an ALL policy (including DELETE) for authenticated users where auth.uid() = user_id.");
       }
       throw error;
     }
@@ -100,7 +102,13 @@ export const getAllGenerations = async (): Promise<SavedGeneration[]> => {
     .select('*')
     .order('timestamp', { ascending: false });
     
-  if (error) return [];
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("policy") || msg.includes("security")) {
+       throw new Error("TABLE_PERMISSIONS: Read access denied for 'generations'. Check RLS policies.");
+    }
+    return [];
+  }
   
   return data.map((item: any) => ({
     id: item.id,
@@ -118,7 +126,14 @@ export const getAllGenerations = async (): Promise<SavedGeneration[]> => {
 
 export const deleteGeneration = async (id: string): Promise<void> => {
   if (!supabase) return;
-  await supabase.from('generations').delete().eq('id', id);
+  const { error } = await supabase.from('generations').delete().eq('id', id);
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("policy") || msg.includes("security") || msg.includes("violates")) {
+      throw new Error("DELETE_PERMISSIONS: You must enable the DELETE operation in your Supabase RLS policy for the 'generations' table.");
+    }
+    throw error;
+  }
 };
 
 export const saveOrder = async (order: PhysicalOrder): Promise<void> => {

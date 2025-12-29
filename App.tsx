@@ -35,10 +35,9 @@ const App: React.FC = () => {
   const [apiLogs, setApiLogs] = useState<ApiLog[]>([]);
   const [physicalOrders, setPhysicalOrders] = useState<PhysicalOrder[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [orderSuccess, setOrderSuccess] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [localMode, setLocalMode] = useState(!supabase);
+  const [setupError, setSetupError] = useState<{ type: 'STORAGE' | 'TABLE' | 'DELETE', message: string } | null>(null);
 
   // Auth States
   const [emailInput, setEmailInput] = useState('');
@@ -108,8 +107,6 @@ const App: React.FC = () => {
   const comicExportRef = useRef<HTMLDivElement>(null);
   const cardFrontRef = useRef<HTMLDivElement>(null);
   const cardBackRef = useRef<HTMLDivElement>(null);
-  const cardBundleRef = useRef<HTMLDivElement>(null);
-  const paypalContainerRef = useRef<HTMLDivElement>(null);
   
   const logoUrl = "https://i.ibb.co/b43T8dM/1.png";
 
@@ -130,7 +127,12 @@ const App: React.FC = () => {
     try {
       const items = await getAllGenerations();
       setGalleryItems(items);
-    } catch (e) { console.error("Gallery failed", e); }
+    } catch (e: any) { 
+      console.error("Gallery failed", e);
+      if (e.message?.toLowerCase().includes("policy")) {
+         setSetupError({ type: 'TABLE', message: "Your chronicles table is currently locked by Supabase RLS policies." });
+      }
+    }
   };
 
   const loadApiLogs = async () => {
@@ -149,15 +151,6 @@ const App: React.FC = () => {
     } catch (e) { console.error("Orders failed", e); }
   };
 
-  const totalApiCost = useMemo(() => {
-    return apiLogs.reduce((acc, log) => acc + log.cost, 0).toFixed(3);
-  }, [apiLogs]);
-
-  const isUserAdmin = useMemo(() => {
-    return state.currentUser?.email.toLowerCase() === ADMIN_EMAIL;
-  }, [state.currentUser]);
-
-  // Auth Handlers
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) return;
@@ -305,7 +298,6 @@ const App: React.FC = () => {
     if (!state.resultImage || activeExport) return;
     setActiveExport(type);
 
-    // Using strictly typed Options to avoid TS2353
     const exportOptions = {
       pixelRatio: 2,
       backgroundColor: '#000000',
@@ -321,7 +313,6 @@ const App: React.FC = () => {
         case 'raw': targetRef = rawImageRef; break;
         case 'comic': targetRef = comicExportRef; break;
         case 'card-front': targetRef = cardFrontRef; break;
-        case 'card-back': targetRef = cardBackRef; break;
       }
 
       if (targetRef?.current) {
@@ -357,9 +348,12 @@ const App: React.FC = () => {
         link.href = dataUrl;
         link.click();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Export failed:", err);
-      setState(prev => ({ ...prev, error: "Artifact storage failure." }));
+      const msg = err.message?.toLowerCase() || "";
+      if (msg.includes("storage_permissions")) setSetupError({ type: 'STORAGE', message: err.message });
+      else if (msg.includes("table_permissions")) setSetupError({ type: 'TABLE', message: err.message });
+      else setState(prev => ({ ...prev, error: "Artifact storage failure." }));
     } finally {
       setActiveExport(null);
     }
@@ -410,12 +404,10 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Save to history failed:", err);
-      // More descriptive alerting for troubleshooting
-      if (err.message.includes("PERMISSIONS ERROR")) {
-        alert(err.message);
-      } else {
-        alert(`Sync failure: ${err.message || "Unknown error."}`);
-      }
+      const msg = err.message?.toLowerCase() || "";
+      if (msg.includes("storage_permissions")) setSetupError({ type: 'STORAGE', message: err.message });
+      else if (msg.includes("table_permissions")) setSetupError({ type: 'TABLE', message: err.message });
+      else alert(`Sync failure: ${err.message || "Unknown error."}`);
     } finally {
       setIsSaving(false);
     }
@@ -442,13 +434,18 @@ const App: React.FC = () => {
 
   const deleteItem = async (id: string) => {
     if (confirm("Erase this artifact from the archives?")) {
-      await deleteGeneration(id);
-      loadGallery();
+      try {
+        await deleteGeneration(id);
+        loadGallery();
+      } catch (e: any) {
+        if (e.message?.toLowerCase().includes("policy") || e.message?.toLowerCase().includes("security")) {
+           setSetupError({ type: 'DELETE', message: "Erase permission denied by Supabase RLS policies." });
+        } else {
+          alert("Could not erase artifact: " + e.message);
+        }
+      }
     }
   };
-
-  const handleScaleChange = (val: number) => setState(prev => ({ ...prev, resultScale: val }));
-  const handleOffsetChange = (axis: 'x' | 'y', val: number) => setState(prev => ({ ...prev, resultOffset: { ...prev.resultOffset, [axis]: val } }));
 
   if (isAuthLoading) {
     return (
@@ -459,57 +456,51 @@ const App: React.FC = () => {
     );
   }
 
-  // SYSTEM DIAGNOSTICS SCREEN (Supabase Offline)
-  if (!supabase && !localMode) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center p-8 text-center space-y-12 animate-fade-in">
-        <div className="relative">
-          <div className="absolute inset-0 bg-red-500 blur-3xl opacity-20 animate-pulse"></div>
-          <div className="w-32 h-32 bg-zinc-900 border-2 border-red-500/50 rounded-full flex items-center justify-center text-red-500 text-5xl shadow-[0_0_50px_rgba(239,68,68,0.3)] relative z-10">
-            <i className="fa-solid fa-triangle-exclamation"></i>
-          </div>
-        </div>
-        
-        <div className="space-y-4 max-w-2xl relative z-10">
-          <h1 className="text-5xl font-orbitron font-black uppercase tracking-tighter italic leading-none">
-            Dimension <span className="text-red-500">Offline</span>
-          </h1>
-          <p className="text-zinc-400 font-bold uppercase tracking-[0.2em] text-[10px] leading-relaxed">
-            The Dimensional Gate requires a valid Supabase Linkage to manifest the cloud chronicles.
-          </p>
-        </div>
-
-        <div className="w-full max-w-lg bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-10 text-left space-y-8 backdrop-blur-xl relative z-10">
-          <div className="flex items-center space-x-4 border-b border-zinc-800 pb-6">
-             <i className="fa-solid fa-wrench text-blue-500 text-xl"></i>
-             <h2 className="text-xs font-black uppercase tracking-[0.3em] text-white italic">Setup Protocol</h2>
-          </div>
-          
-          <ul className="space-y-6">
-            <li className="flex items-start space-x-4 group">
-              <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1 shadow-[0_0_10px_rgba(59,130,246,0.2)]">1</div>
-              <div className="space-y-1">
-                <p className="text-sm text-white font-bold uppercase tracking-tight">Configure Environment</p>
-                <p className="text-xs text-zinc-500 leading-relaxed">Add SUPABASE_URL and SUPABASE_ANON_KEY to your project secrets to enable cloud saving.</p>
-              </div>
-            </li>
-          </ul>
-
-          <div className="pt-4 flex flex-col space-y-3">
-             <button onClick={() => setLocalMode(true)} className="block w-full py-4 bg-blue-600 hover:bg-blue-500 text-white text-center font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-lg glow-effect">
-               Proceed in Local Mode (Guest)
-             </button>
-             <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" className="block w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white text-center font-black uppercase tracking-widest text-[10px] rounded-2xl border border-zinc-700 transition-all">
-               Open Supabase Dashboard
-             </a>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col font-inter">
+      {/* SETUP ASSISTANT MODAL */}
+      {setupError && (
+        <div className="fixed inset-0 z-[500] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl animate-fade-in">
+          <div className="max-w-2xl w-full bg-zinc-900 border-2 border-red-500/50 rounded-[2.5rem] p-10 space-y-8 shadow-[0_0_100px_rgba(239,68,68,0.2)]">
+            <div className="flex items-center space-x-6 text-red-500">
+               <i className={`fa-solid ${setupError.type === 'DELETE' ? 'fa-eraser' : 'fa-shield-halved'} text-5xl`}></i>
+               <h2 className="text-3xl font-orbitron font-black uppercase italic tracking-tighter">
+                 {setupError.type === 'DELETE' ? 'Erase' : 'Permission'} <span className="text-white">Denied</span>
+               </h2>
+            </div>
+            
+            <p className="text-zinc-400 font-bold uppercase tracking-widest text-xs leading-relaxed">
+              Your Supabase Dimension is refusing the transmission. To fix this, you MUST enable the <strong>DELETE</strong> operation in your policies.
+            </p>
+
+            <div className="bg-black/40 border border-zinc-800 rounded-2xl p-6 space-y-4 font-mono text-[11px]">
+              <p className="text-blue-400 font-bold"># REQUIRED CONFIGURATION:</p>
+              {setupError.type === 'STORAGE' || setupError.type === 'DELETE' ? (
+                <ul className="space-y-2 text-zinc-300">
+                  <li>1. Go to Supabase Dashboard > <span className="text-white">Storage</span></li>
+                  <li>2. Select bucket: <span className="text-white font-bold">'cosplay-artifacts'</span></li>
+                  <li>3. Click <span className="text-white font-bold">Policies</span> > Edit or New Policy</li>
+                  <li>4. Check ALL operations: <span className="text-green-500">SELECT, INSERT, UPDATE, DELETE</span></li>
+                  <li>5. Set target role to: <span className="text-white font-bold">authenticated</span></li>
+                </ul>
+              ) : (
+                <ul className="space-y-2 text-zinc-300">
+                  <li>1. Go to Supabase Dashboard > <span className="text-white">Table Editor</span></li>
+                  <li>2. Select table: <span className="text-white font-bold">'generations'</span></li>
+                  <li>3. Click <span className="text-white font-bold">Add Policy</span> (using for authenticated users)</li>
+                  <li>4. Check ALL operations: <span className="text-green-500">SELECT, INSERT, UPDATE, DELETE</span></li>
+                  <li>5. For "Policy Definition", use: <span className="text-blue-400">auth.uid() = user_id</span></li>
+                </ul>
+              )}
+            </div>
+
+            <button onClick={() => setSetupError(null)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-500 hover:text-white transition-all shadow-xl">
+              I've Checked All Boxes (Including DELETE)
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* AUTH SCREENS */}
       {(state.step === AppStep.LOGIN || state.step === AppStep.SIGNUP) && supabase && (
         <div className="fixed inset-0 z-[300] bg-black flex items-center justify-center p-6 overflow-y-auto">
@@ -598,7 +589,6 @@ const App: React.FC = () => {
                 <ComicFrame category={state.selectedCategory?.name || "HERO"} subcategory={state.selectedSubcategory?.name || "ULTIMATE"} customTitle={state.characterName} />
               </div>
               <div ref={cardFrontRef} style={{ width: '900px', height: '1200px' }}><TradingCard frontImage={state.resultImage} backImage={state.sourceImage!} stats={state.stats!} characterName={state.characterName} characterDescription={state.characterDescription} category={state.selectedCategory?.name || 'Cosplay'} isFlipped={false} onFlip={() => {}} statusText={state.cardStatusText} exportSide="front" /></div>
-              <div ref={cardBackRef} style={{ width: '900px', height: '1200px' }}><TradingCard frontImage={state.resultImage} backImage={state.sourceImage!} stats={state.stats!} characterName={state.characterName} characterDescription={state.characterDescription} category={state.selectedCategory?.name || 'Cosplay'} isFlipped={true} onFlip={() => {}} statusText={state.cardStatusText} exportSide="back" /></div>
             </div>
 
             <div className="flex-1 w-full max-w-lg mx-auto space-y-4">
