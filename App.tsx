@@ -305,11 +305,12 @@ const App: React.FC = () => {
     if (!state.resultImage || activeExport) return;
     setActiveExport(type);
 
-    const exportOptions = {
+    // Using 'as any' to avoid property-specific type issues during build
+    const exportOptions: any = {
       pixelRatio: 2,
       backgroundColor: '#000000',
       cacheBust: true
-    } as any;
+    };
 
     try {
       let targetRef: React.RefObject<HTMLDivElement | null> | null = null;
@@ -388,6 +389,7 @@ const App: React.FC = () => {
         }));
 
         await new Promise(r => setTimeout(r, 400));
+        // Casting options as any to bypass strict type checking for library-specific parameters
         const dataUrl = await toPng(targetRef.current, { pixelRatio: 1.5, cacheBust: true } as any);
         
         const genId = state.editingId || `gen-${Date.now()}`;
