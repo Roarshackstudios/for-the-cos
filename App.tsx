@@ -181,7 +181,7 @@ const App: React.FC = () => {
       password: passwordInput,
     });
     if (error) setAuthError(error.message);
-    else alert("Identity registration initialized. Check your email for verification.");
+    else alert("Identity registration initialized. Check your email for verification. (NOTE: If the link fails, ensure your Supabase 'Site URL' is set to your production domain, not localhost).");
   };
 
   const handleLogout = async () => {
@@ -391,6 +391,7 @@ const App: React.FC = () => {
       cacheBust: true,
       pixelRatio: 2,
       backgroundColor: '#000000',
+      useCORS: true
     };
 
     try {
@@ -469,7 +470,7 @@ const App: React.FC = () => {
         }));
 
         await new Promise(r => setTimeout(r, 400));
-        const dataUrl = await toPng(targetRef.current, { pixelRatio: 1.5, cacheBust: true });
+        const dataUrl = await toPng(targetRef.current, { pixelRatio: 1.5, cacheBust: true, useCORS: true });
         
         const genId = state.editingId || `gen-${Date.now()}`;
         await saveGeneration({
@@ -487,9 +488,9 @@ const App: React.FC = () => {
         await loadGallery();
         alert("Chronicle successfully synchronized with cloud archives.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Save to history failed:", err);
-      alert("Failed to sync artifact. Storage full or offline.");
+      alert(`Sync failure: ${err.message || "Storage permissions or offline error."}\n\nTIP: Ensure you have created the 'cosplay-artifacts' bucket in Supabase Storage and set it to PUBLIC.`);
     } finally {
       setIsSaving(false);
     }
@@ -594,27 +595,27 @@ const App: React.FC = () => {
               <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1 shadow-[0_0_10px_rgba(59,130,246,0.2)]">1</div>
               <div className="space-y-1">
                 <p className="text-sm text-white font-bold uppercase tracking-tight">Access the Secrets Tab</p>
-                <p className="text-xs text-zinc-500 leading-relaxed">Find the &quot;Secrets&quot; or &quot;Environment Variables&quot; panel in your code editor&apos;s sidebar.</p>
+                <p className="text-xs text-zinc-500 leading-relaxed">Find the &quot;Secrets&quot; or &quot;Environment Variables&quot; panel in your Vercel/IDE settings.</p>
               </div>
             </li>
             <li className="flex items-start space-x-4 group">
               <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1">2</div>
               <div className="space-y-1">
-                <p className="text-sm text-white font-bold uppercase tracking-tight">Configure SUPABASE_URL</p>
-                <p className="text-xs text-zinc-500 leading-relaxed">Copy the &quot;Project URL&quot; from Supabase Settings &gt; API and add it as a new secret.</p>
+                <p className="text-sm text-white font-bold uppercase tracking-tight">Configure API Keys</p>
+                <p className="text-xs text-zinc-500 leading-relaxed">Add SUPABASE_URL and SUPABASE_ANON_KEY from Settings &gt; API.</p>
               </div>
             </li>
             <li className="flex items-start space-x-4 group">
               <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1">3</div>
               <div className="space-y-1">
-                <p className="text-sm text-white font-bold uppercase tracking-tight">Configure SUPABASE_ANON_KEY</p>
-                <p className="text-xs text-zinc-500 leading-relaxed">Copy the &quot;anon&quot; public key from Supabase Settings &gt; API and add it as a new secret.</p>
+                <p className="text-sm text-white font-bold uppercase tracking-tight">Initialize Storage Bucket</p>
+                <p className="text-xs text-zinc-500 leading-relaxed">Create a PUBLIC bucket named <strong>cosplay-artifacts</strong> in the Supabase Storage tab.</p>
               </div>
             </li>
           </ul>
 
           <div className="pt-4">
-             <a href="https://supabase.com" target="_blank" className="block w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white text-center font-black uppercase tracking-widest text-[10px] rounded-2xl border border-zinc-700 transition-all">
+             <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" className="block w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white text-center font-black uppercase tracking-widest text-[10px] rounded-2xl border border-zinc-700 transition-all">
                Open Supabase Dashboard
              </a>
           </div>
@@ -664,7 +665,14 @@ const App: React.FC = () => {
               </div>
 
               {authError && (
-                <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest bg-red-500/10 p-3 rounded-xl border border-red-500/20">{authError}</p>
+                <div className="space-y-2">
+                  <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest bg-red-500/10 p-3 rounded-xl border border-red-500/20">{authError}</p>
+                  {authError.toLowerCase().includes("confirm") && (
+                    <p className="text-zinc-500 text-[9px] uppercase font-bold tracking-tight">
+                      Tip: If the email link redirects to localhost, update your "Site URL" in the Supabase Dashboard.
+                    </p>
+                  )}
+                </div>
               )}
 
               <button 
@@ -1077,6 +1085,7 @@ const App: React.FC = () => {
                     <TradingCard frontImage={state.resultImage} backImage={state.sourceImage} stats={state.stats} characterName={state.characterName} characterDescription={state.characterDescription} category={state.selectedCategory?.name || 'Cosplay'} isFlipped={false} onFlip={() => {}} statusText={state.cardStatusText} imageScale={state.resultScale} imageOffset={state.resultOffset} exportSide="front" />
                   </div>
                   <div ref={cardBackRef} style={{ width: '900px', height: '1200px', position: 'relative' }}>
+                    {/* Fixed: Use state.characterName instead of undefined characterName */}
                     <TradingCard frontImage={state.resultImage} backImage={state.sourceImage} stats={state.stats} characterName={state.characterName} characterDescription={state.characterDescription} category={state.selectedCategory?.name || 'Cosplay'} isFlipped={true} onFlip={() => {}} statusText={state.cardStatusText} imageScale={state.resultScale} imageOffset={state.resultOffset} exportSide="back" />
                   </div>
                 </>
@@ -1269,6 +1278,64 @@ const App: React.FC = () => {
            <p className="text-zinc-600 text-[10px] font-bold uppercase tracking-[0.3em]">&copy; 2024 FOR THE COS. DIMENSIONS SYNERGIZED VIA GEMINI AI.</p>
         </div>
       </footer>
+
+      {/* SYSTEM DIAGNOSTICS SCREEN (Missing Supabase Config) */}
+      {!supabase && (
+        <div className="fixed inset-0 z-[1000] bg-[#0a0a0a] flex flex-col items-center justify-center p-8 text-center space-y-12 animate-fade-in">
+          <div className="relative">
+            <div className="absolute inset-0 bg-red-500 blur-3xl opacity-20 animate-pulse"></div>
+            <div className="w-32 h-32 bg-zinc-900 border-2 border-red-500/50 rounded-full flex items-center justify-center text-red-500 text-5xl shadow-[0_0_50px_rgba(239,68,68,0.3)] relative z-10">
+              <i className="fa-solid fa-triangle-exclamation"></i>
+            </div>
+          </div>
+          
+          <div className="space-y-4 max-w-2xl relative z-10">
+            <h1 className="text-5xl font-orbitron font-black uppercase tracking-tighter italic leading-none">
+              Dimension <span className="text-red-500">Offline</span>
+            </h1>
+            <p className="text-zinc-400 font-bold uppercase tracking-[0.2em] text-[10px] leading-relaxed">
+              The Dimensional Gate requires a valid Supabase Linkage to manifest the chronicles.
+            </p>
+          </div>
+
+          <div className="w-full max-w-lg bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-10 text-left space-y-8 backdrop-blur-xl relative z-10">
+            <div className="flex items-center space-x-4 border-b border-zinc-800 pb-6">
+               <i className="fa-solid fa-wrench text-blue-500 text-xl"></i>
+               <h2 className="text-xs font-black uppercase tracking-[0.3em] text-white italic">Setup Protocol</h2>
+            </div>
+            
+            <ul className="space-y-6">
+              <li className="flex items-start space-x-4 group">
+                <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1 shadow-[0_0_10px_rgba(59,130,246,0.2)]">1</div>
+                <div className="space-y-1">
+                  <p className="text-sm text-white font-bold uppercase tracking-tight">Access the Secrets Tab</p>
+                  <p className="text-xs text-zinc-500 leading-relaxed">Find the &quot;Secrets&quot; or &quot;Environment Variables&quot; panel in your Vercel/IDE settings.</p>
+                </div>
+              </li>
+              <li className="flex items-start space-x-4 group">
+                <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1">2</div>
+                <div className="space-y-1">
+                  <p className="text-sm text-white font-bold uppercase tracking-tight">Configure API Keys</p>
+                  <p className="text-xs text-zinc-500 leading-relaxed">Add SUPABASE_URL and SUPABASE_ANON_KEY from Settings &gt; API.</p>
+                </div>
+              </li>
+              <li className="flex items-start space-x-4 group">
+                <div className="w-6 h-6 rounded-full bg-blue-600/10 border border-blue-500 flex items-center justify-center text-[10px] font-black text-blue-500 mt-1">3</div>
+                <div className="space-y-1">
+                  <p className="text-sm text-white font-bold uppercase tracking-tight">Initialize Storage Bucket</p>
+                  <p className="text-xs text-zinc-500 leading-relaxed">Create a PUBLIC bucket named <strong>cosplay-artifacts</strong> in the Supabase Storage tab.</p>
+                </div>
+              </li>
+            </ul>
+
+            <div className="pt-4">
+               <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" className="block w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white text-center font-black uppercase tracking-widest text-[10px] rounded-2xl border border-zinc-700 transition-all">
+                 Open Supabase Dashboard
+               </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -72,11 +72,22 @@ Key Composition Requirements:
           aspectRatio: "3:4" 
         },
         safetySettings: [
-          // Using any cast to bypass the strict enum checks that vary by model type in the SDK
-          { category: 'HARM_CATEGORY_HARASSMENT' as any, threshold: 'BLOCK_NONE' as any },
-          { category: 'HARM_CATEGORY_HATE_SPEECH' as any, threshold: 'BLOCK_NONE' as any },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT' as any, threshold: 'BLOCK_NONE' as any },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT' as any, threshold: 'BLOCK_NONE' as any },
+          { 
+            category: HarmCategory.HARM_CATEGORY_IMAGE_HARASSMENT, 
+            threshold: HarmBlockThreshold.BLOCK_NONE 
+          },
+          { 
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, 
+            threshold: HarmBlockThreshold.BLOCK_NONE 
+          },
+          { 
+            category: HarmCategory.HARM_CATEGORY_IMAGE_SEXUALLY_EXPLICIT, 
+            threshold: HarmBlockThreshold.BLOCK_NONE 
+          },
+          { 
+            category: HarmCategory.HARM_CATEGORY_IMAGE_DANGEROUS_CONTENT, 
+            threshold: HarmBlockThreshold.BLOCK_NONE 
+          },
         ]
       }
     });
