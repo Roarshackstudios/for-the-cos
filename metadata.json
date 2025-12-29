@@ -1,0 +1,7 @@
+{
+  "name": "For The Cos",
+  "description": "A premium cosplay enhancement app that uses AI to superimpose cosplayers into breathtaking themed sceneries.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
