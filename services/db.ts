@@ -42,7 +42,7 @@ const uploadToStorage = async (base64: string, path: string): Promise<string> =>
 
     if (error) {
       console.error("Storage upload error:", error);
-      throw new Error(`Storage upload failed: ${error.message}. Ensure the bucket '${BUCKET_NAME}' exists and is set to PUBLIC.`);
+      throw new Error(`Sync error: '${error.message}'. Ensure bucket '${BUCKET_NAME}' exists and is PUBLIC.`);
     }
 
     const { data: { publicUrl } } = supabase.storage
@@ -59,7 +59,7 @@ const uploadToStorage = async (base64: string, path: string): Promise<string> =>
 export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
   if (!supabase) return;
   const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) throw new Error("Authentication required.");
+  if (!userData.user) throw new Error("Authentication required for sync.");
 
   const imageUrl = await uploadToStorage(gen.image, 'generations');
   const sourceUrl = gen.originalSourceImage ? await uploadToStorage(gen.originalSourceImage, 'sources') : null;
@@ -78,10 +78,7 @@ export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
     user_id: userData.user.id
   });
 
-  if (error) {
-    console.error("Database upsert error:", error);
-    throw new Error(`Database error: ${error.message}`);
-  }
+  if (error) throw error;
 };
 
 export const getAllGenerations = async (): Promise<SavedGeneration[]> => {
