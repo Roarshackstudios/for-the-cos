@@ -1,4 +1,4 @@
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 export async function processCosplayImage(
   sourceBase64: string,
@@ -71,25 +71,26 @@ Key Composition Requirements:
         imageConfig: {
           aspectRatio: "3:4" 
         },
+        // We use string literals cast to 'any' to avoid version-specific Enum naming conflicts during build.
         safetySettings: [
           { 
-            category: HarmCategory.HARM_CATEGORY_IMAGE_HARASSMENT as any, 
-            threshold: HarmBlockThreshold.BLOCK_NONE as any
+            category: "HARM_CATEGORY_HARASSMENT" as any, 
+            threshold: "BLOCK_NONE" as any
           },
           { 
-            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH as any, 
-            threshold: HarmBlockThreshold.BLOCK_NONE as any
+            category: "HARM_CATEGORY_HATE_SPEECH" as any, 
+            threshold: "BLOCK_NONE" as any
           },
           { 
-            category: HarmCategory.HARM_CATEGORY_IMAGE_SEXUALLY_EXPLICIT as any, 
-            threshold: HarmBlockThreshold.BLOCK_NONE as any
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT" as any, 
+            threshold: "BLOCK_NONE" as any
           },
           { 
-            category: HarmCategory.HARM_CATEGORY_IMAGE_DANGEROUS_CONTENT as any, 
-            threshold: HarmBlockThreshold.BLOCK_NONE as any
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT" as any, 
+            threshold: "BLOCK_NONE" as any
           },
         ]
-      }
+      } as any
     });
 
     if (response.candidates?.[0]?.content?.parts) {
