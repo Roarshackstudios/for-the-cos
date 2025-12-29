@@ -305,12 +305,13 @@ const App: React.FC = () => {
     if (!state.resultImage || activeExport) return;
     setActiveExport(type);
 
-    // Using 'as any' to avoid property-specific type issues during build
-    const exportOptions: any = {
+    // Using strictly typed Options to avoid TS2353
+    const exportOptions = {
       pixelRatio: 2,
       backgroundColor: '#000000',
-      cacheBust: true
-    };
+      cacheBust: true,
+      skipFonts: false
+    } as any;
 
     try {
       let targetRef: React.RefObject<HTMLDivElement | null> | null = null;
@@ -389,7 +390,6 @@ const App: React.FC = () => {
         }));
 
         await new Promise(r => setTimeout(r, 400));
-        // Casting options as any to bypass strict type checking for library-specific parameters
         const dataUrl = await toPng(targetRef.current, { pixelRatio: 1.5, cacheBust: true } as any);
         
         const genId = state.editingId || `gen-${Date.now()}`;
@@ -410,7 +410,12 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Save to history failed:", err);
-      alert(`Sync failure: ${err.message || "Unknown error."}`);
+      // More descriptive alerting for troubleshooting
+      if (err.message.includes("PERMISSIONS ERROR")) {
+        alert(err.message);
+      } else {
+        alert(`Sync failure: ${err.message || "Unknown error."}`);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -537,7 +542,10 @@ const App: React.FC = () => {
           <h1 className="text-2xl font-orbitron font-bold tracking-tighter uppercase ml-4">FOR THE <span className="text-blue-500">COS</span></h1>
         </div>
         <div className="flex items-center space-x-6">
-          {!supabase && <span className="hidden md:block text-[8px] font-black uppercase tracking-widest text-blue-500/50 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">Local Mode Active</span>}
+          <div className="hidden md:flex items-center space-x-2 mr-4">
+             <div className={`w-2 h-2 rounded-full ${supabase ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
+             <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500">{supabase ? 'Sync Online' : 'Local Node'}</span>
+          </div>
           {state.currentUser ? (
             <>
               <button onClick={() => setState(prev => ({ ...prev, step: AppStep.GALLERY }))} className={`text-sm font-bold uppercase tracking-widest transition-colors flex items-center space-x-2 ${state.step === AppStep.GALLERY ? 'text-blue-500' : 'text-zinc-500 hover:text-white'}`}>

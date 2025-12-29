@@ -42,7 +42,10 @@ const uploadToStorage = async (base64: string, path: string): Promise<string> =>
 
     if (error) {
       console.error("Storage upload error:", error);
-      throw new Error(`Sync error: '${error.message}'. Ensure bucket '${BUCKET_NAME}' exists and is PUBLIC.`);
+      if (error.message.includes("row-level security")) {
+        throw new Error(`PERMISSIONS ERROR: Your Supabase Storage Bucket '${BUCKET_NAME}' has RLS enabled but no policy for 'INSERT'. Go to Supabase -> Storage -> Buckets -> ${BUCKET_NAME} -> Policies and add an 'INSERT' policy for authenticated users.`);
+      }
+      throw new Error(`Sync error: '${error.message}'. Ensure bucket '${BUCKET_NAME}' exists and is set to PUBLIC.`);
     }
 
     const { data: { publicUrl } } = supabase.storage
@@ -61,24 +64,33 @@ export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) throw new Error("Authentication required for sync.");
 
-  const imageUrl = await uploadToStorage(gen.image, 'generations');
-  const sourceUrl = gen.originalSourceImage ? await uploadToStorage(gen.originalSourceImage, 'sources') : null;
+  try {
+    const imageUrl = await uploadToStorage(gen.image, 'generations');
+    const sourceUrl = gen.originalSourceImage ? await uploadToStorage(gen.originalSourceImage, 'sources') : null;
 
-  const { error } = await supabase.from('generations').upsert({
-    id: gen.id,
-    timestamp: gen.timestamp,
-    image: imageUrl,
-    name: gen.name,
-    category: gen.category,
-    type: gen.type,
-    stats: gen.stats,
-    description: gen.description,
-    card_status_text: gen.cardStatusText,
-    original_source_image: sourceUrl,
-    user_id: userData.user.id
-  });
+    const { error } = await supabase.from('generations').upsert({
+      id: gen.id,
+      timestamp: gen.timestamp,
+      image: imageUrl,
+      name: gen.name,
+      category: gen.category,
+      type: gen.type,
+      stats: gen.stats,
+      description: gen.description,
+      card_status_text: gen.cardStatusText,
+      original_source_image: sourceUrl,
+      user_id: userData.user.id
+    });
 
-  if (error) throw error;
+    if (error) {
+      if (error.message.includes("row-level security")) {
+        throw new Error("PERMISSIONS ERROR: The 'generations' table has RLS enabled but no INSERT policy for your user ID.");
+      }
+      throw error;
+    }
+  } catch (err: any) {
+    throw err;
+  }
 };
 
 export const getAllGenerations = async (): Promise<SavedGeneration[]> => {
