@@ -29,7 +29,7 @@ export enum AppStep {
 export interface User {
   id: string;
   email: string;
-  password?: string; // Stored locally for demo purposes
+  password?: string;
 }
 
 export interface CardStats {
@@ -49,6 +49,8 @@ export interface AdminSettings {
   isPaypalProduction: boolean;
   priceComicPrint: number;
   priceCardSet: number;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
 }
 
 export interface ApiLog {

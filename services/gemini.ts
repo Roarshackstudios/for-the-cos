@@ -7,7 +7,7 @@ export async function processCosplayImage(
   styleIntensity: number,
   customPrompt?: string
 ): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const mimeTypeMatch = sourceBase64.match(/^data:(image\/[a-zA-Z0-9.+]+);base64,/);
   const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/png';
@@ -17,39 +17,30 @@ export async function processCosplayImage(
   if (customPrompt) {
     sceneDescription = customPrompt;
   } else if (subcategoryName === "Auto Detect") {
-    sceneDescription = `a cinematic digital art backdrop that perfectly matches the character's costume in the style of ${categoryName}`;
+    sceneDescription = `a breathtaking cinematic backdrop matching the character's aesthetic in a ${categoryName} theme`;
   } else {
-    sceneDescription = `a highly detailed ${subcategoryName} digital art environment in the style of ${categoryName}`;
+    sceneDescription = `a highly detailed ${subcategoryName} environment in a ${categoryName} style`;
   }
 
   let aestheticGuide = "";
   if (styleIntensity < 30) {
-    aestheticGuide = "Use a stylized 2D anime cel-shaded illustrative aesthetic with bold graphic outlines for the background.";
+    aestheticGuide = "stylized 2D anime cel-shaded illustrative";
   } else if (styleIntensity < 70) {
-    aestheticGuide = "Use a cinematic digital painterly style with dramatic volumetric lighting and soft textures for the environment.";
+    aestheticGuide = "cinematic digital painterly with dramatic lighting";
   } else {
-    aestheticGuide = "Use a high-fidelity digital art style with cinematic lighting, complex atmospheric effects, and professional color grading for the backdrop.";
+    aestheticGuide = "high-fidelity realistic digital art with professional cinematic color grading";
   }
 
-  const prompt = `Task: Background Replacement and Scene Integration.
-Input: A reference image of a person in a cosplay costume.
+  const prompt = `Task: Professional Background Replacement.
 
-CRITICAL REQUIREMENT: SUBJECT INTEGRITY
-1. PRESERVE IDENTITY: You MUST keep the exact face, features, and likeness of the person in the input image. DO NOT generate a different person or alter their facial structure.
-2. PRESERVE COSTUME: Keep the costume, props, and clothing details exactly as they appear in the source. Do not simplify or radically redesign the cosplay.
-3. BLEND LIGHTING: The only change to the subject should be the lighting and color grading to ensure they look naturally integrated into the new environment.
+Instructions:
+1. BACKGROUND: Replace the entire background with: ${sceneDescription}. 
+2. STYLE: Use a ${aestheticGuide} aesthetic for the new environment.
+3. SUBJECT PRESERVATION: Keep the person, their costume, and their props from the original image PERFECTLY identical. Do not alter their face, body structure, or clothing.
+4. INTEGRATION: Seamlessly blend the original subject into the new scenery using matching atmospheric lighting, shadows, and depth of field.
+5. COMPOSITION: Center the subject vertically. Ensure there is generous space above the head and below the feet for a professional portrait look.
 
-Action: Generate a new environment: ${sceneDescription}.
-Aesthetic: ${aestheticGuide}
-
-Key Composition Requirements:
-1. PORTRAIT FULL-BODY SHOT: Show the subject head-to-toe in a vertical frame.
-2. PERFECT VERTICAL CENTERING: Position the subject exactly in the center of the vertical axis.
-3. EQUAL TOP & BOTTOM MARGINS: Add large, equal amounts of empty space (padding) above the head and below the feet. 
-4. 55% SUBJECT HEIGHT: The subject should occupy approximately 55% of the total frame height.
-5. GENEROUS NEGATIVE SPACE: Maintain wide margins on all sides for cropping.
-6. CINEMATIC INTEGRATION: Ensure the subject is seamlessly blended into the generated scenery with matching depth of field and atmospheric lighting.
-7. Output ONLY the image data. No text, watermark, or labels.`;
+Output ONLY the final processed image.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -70,34 +61,18 @@ Key Composition Requirements:
       config: {
         imageConfig: {
           aspectRatio: "3:4" 
-        },
-        safetySettings: [
-          { 
-            category: "HARM_CATEGORY_HARASSMENT" as any, 
-            threshold: "BLOCK_NONE" as any
-          },
-          { 
-            category: "HARM_CATEGORY_HATE_SPEECH" as any, 
-            threshold: "BLOCK_NONE" as any
-          },
-          { 
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT" as any, 
-            threshold: "BLOCK_NONE" as any
-          },
-          { 
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT" as any, 
-            threshold: "BLOCK_NONE" as any
-          },
-          { 
-            category: "HARM_CATEGORY_CIVIC_INTEGRITY" as any, 
-            threshold: "BLOCK_NONE" as any
-          }
-        ] as any
-      } as any
+        }
+      }
     });
 
-    if (response.candidates?.[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
+    const candidate = response.candidates?.[0];
+    
+    if (candidate?.finishReason === 'SAFETY') {
+      throw new Error("The image was blocked by safety filters. Try a different scene or photo.");
+    }
+
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
         if (part.inlineData) {
           return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
         }
@@ -107,8 +82,6 @@ Key Composition Requirements:
     throw new Error("No image was generated. This may be due to safety filters or input processing limits.");
   } catch (error: any) {
     console.error("Gemini processing error details:", error);
-    const message = error.message || "";
-    if (message.includes("safety")) throw new Error("The image was blocked by safety filters. Try a different scene or photo.");
     throw error;
   }
 }
