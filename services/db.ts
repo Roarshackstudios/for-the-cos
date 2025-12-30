@@ -1,29 +1,68 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SavedGeneration, ApiLog, PhysicalOrder } from '../types';
-
-// Access environment variables defined in vite.config.ts
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 const isValid = (val: any): val is string => 
   typeof val === 'string' && 
   val.length > 0 && 
   val !== 'undefined' && 
   val !== 'null' &&
-  !val.startsWith('{{'); // Prevents placeholder triggers
+  !val.startsWith('{{');
 
-// Log initialization status for debugging
-if (!isValid(supabaseUrl) || !isValid(supabaseAnonKey)) {
-  console.warn("Supabase initialization skipped: Missing environment variables.");
-  console.debug("SUPABASE_URL status:", isValid(supabaseUrl) ? "Present" : "Missing");
-  console.debug("SUPABASE_ANON_KEY status:", isValid(supabaseAnonKey) ? "Present" : "Missing");
-} else {
-  console.info("Supabase client initialized successfully.");
-}
+// Singleton state
+let cachedClient: SupabaseClient | null = null;
+let cachedConfigKey: string | null = null;
 
-export const supabase = (isValid(supabaseUrl) && isValid(supabaseAnonKey)) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
+// Dynamic getter to prevent top-level boot crashes and ensure singleton usage
+const getSupabase = (): SupabaseClient | null => {
+  let targetUrl = '';
+  let targetKey = '';
+
+  try {
+    // 1. Check Environment Variables
+    const envUrl = process.env.SUPABASE_URL;
+    const envKey = process.env.SUPABASE_ANON_KEY;
+
+    if (isValid(envUrl) && isValid(envKey)) {
+      targetUrl = envUrl;
+      targetKey = envKey;
+    }
+
+    // 2. Check LocalSettings (pasted in Admin Panel) - Overrides env if valid
+    const settingsStr = localStorage.getItem('cos-admin-settings');
+    if (settingsStr) {
+      try {
+        const settings = JSON.parse(settingsStr);
+        if (isValid(settings.supabaseUrl) && isValid(settings.supabaseAnonKey)) {
+          const url = settings.supabaseUrl.trim();
+          if (url.startsWith('http')) {
+            targetUrl = url;
+            targetKey = settings.supabaseAnonKey.trim();
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!targetUrl || !targetKey) return null;
+
+    // Check if we already have a client for this specific configuration
+    const configIdentifier = `${targetUrl}-${targetKey}`;
+    if (cachedClient && cachedConfigKey === configIdentifier) {
+      return cachedClient;
+    }
+
+    // Create new instance and cache it
+    const urlCheck = new URL(targetUrl);
+    if (urlCheck.protocol === 'http:' || urlCheck.protocol === 'https:') {
+      cachedClient = createClient(targetUrl, targetKey);
+      cachedConfigKey = configIdentifier;
+      return cachedClient;
+    }
+  } catch (e) {
+    console.error("Critical failure initializing Supabase:", e);
+  }
+
+  return null;
+};
 
 const BUCKET_NAME = 'cosplay-artifacts';
 
@@ -40,89 +79,66 @@ const base64ToBlob = (base64: string): Blob => {
 };
 
 const uploadToStorage = async (base64: string, path: string): Promise<string> => {
-  if (!supabase) throw new Error("Supabase connection inactive.");
+  const client = getSupabase();
+  if (!client) return base64;
   if (!base64 || base64.startsWith('http')) return base64; 
   
   try {
     const blob = base64ToBlob(base64);
     const fileName = `${path}/${Date.now()}-${Math.random().toString(36).substring(7)}.png`;
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await client.storage
       .from(BUCKET_NAME)
-      .upload(fileName, blob, { 
-        contentType: 'image/png',
-        upsert: true
-      });
+      .upload(fileName, blob, { contentType: 'image/png', upsert: true });
 
-    if (error) {
-      console.error("Storage upload error:", error);
-      const msg = error.message.toLowerCase();
-      if (msg.includes("row-level security") || msg.includes("policy") || msg.includes("new row violates")) {
-        throw new Error(`STORAGE_PERMISSIONS: Your Supabase Storage Bucket '${BUCKET_NAME}' needs an ALL policy (SELECT, INSERT, UPDATE, DELETE) for authenticated users.`);
-      }
-      throw new Error(`Sync error: '${error.message}'. Ensure bucket '${BUCKET_NAME}' exists and is set to PUBLIC.`);
-    }
+    if (error) throw error;
 
-    const { data: { publicUrl } } = supabase.storage
+    const { data: { publicUrl } } = client.storage
       .from(BUCKET_NAME)
       .getPublicUrl(data.path);
 
     return publicUrl;
-  } catch (err: any) {
-    console.error("Critical upload failure:", err);
-    throw err;
+  } catch (err) {
+    console.error("Storage upload failed:", err);
+    return base64;
   }
 };
 
 export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
-  if (!supabase) return;
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) throw new Error("Authentication required for sync.");
-
-  try {
-    const imageUrl = await uploadToStorage(gen.image, 'generations');
-    const sourceUrl = gen.originalSourceImage ? await uploadToStorage(gen.originalSourceImage, 'sources') : null;
-
-    const { error } = await supabase.from('generations').upsert({
-      id: gen.id,
-      timestamp: gen.timestamp,
-      image: imageUrl,
-      name: gen.name,
-      category: gen.category,
-      type: gen.type,
-      stats: gen.stats,
-      description: gen.description,
-      card_status_text: gen.cardStatusText,
-      original_source_image: sourceUrl,
-      user_id: userData.user.id
-    });
-
-    if (error) {
-      const msg = error.message.toLowerCase();
-      if (msg.includes("row-level security") || msg.includes("policy") || msg.includes("violates")) {
-        throw new Error("TABLE_PERMISSIONS: The 'generations' table needs an ALL policy (including DELETE) for authenticated users where auth.uid() = user_id.");
-      }
-      throw error;
-    }
-  } catch (err: any) {
-    throw err;
+  const client = getSupabase();
+  if (!client) {
+    throw new Error("Cloud synchronization is not configured. Please add Supabase credentials in the Matrix Config.");
   }
+  
+  const imageUrl = await uploadToStorage(gen.image, 'generations');
+  const sourceUrl = gen.originalSourceImage ? await uploadToStorage(gen.originalSourceImage, 'sources') : null;
+
+  const { error } = await client.from('generations').upsert({
+    id: gen.id,
+    timestamp: gen.timestamp,
+    image: imageUrl,
+    name: gen.name,
+    category: gen.category,
+    type: gen.type,
+    stats: gen.stats,
+    description: gen.description,
+    card_status_text: gen.cardStatusText,
+    original_source_image: sourceUrl
+  });
+
+  if (error) throw error;
 };
 
 export const getAllGenerations = async (): Promise<SavedGeneration[]> => {
-  if (!supabase) return [];
-  const { data, error } = await supabase
+  const client = getSupabase();
+  if (!client) return [];
+  
+  const { data, error } = await client
     .from('generations')
     .select('*')
     .order('timestamp', { ascending: false });
     
-  if (error) {
-    const msg = error.message.toLowerCase();
-    if (msg.includes("policy") || msg.includes("security")) {
-       throw new Error("TABLE_PERMISSIONS: Read access denied for 'generations'. Check RLS policies.");
-    }
-    return [];
-  }
+  if (error) throw error;
   
   return data.map((item: any) => ({
     id: item.id,
@@ -139,25 +155,18 @@ export const getAllGenerations = async (): Promise<SavedGeneration[]> => {
 };
 
 export const deleteGeneration = async (id: string): Promise<void> => {
-  if (!supabase) return;
-  const { error } = await supabase.from('generations').delete().eq('id', id);
-  if (error) {
-    const msg = error.message.toLowerCase();
-    if (msg.includes("policy") || msg.includes("security") || msg.includes("violates")) {
-      throw new Error("DELETE_PERMISSIONS: You must enable the DELETE operation in your Supabase RLS policy for the 'generations' table.");
-    }
-    throw error;
-  }
+  const client = getSupabase();
+  if (!client) return;
+  const { error } = await client.from('generations').delete().eq('id', id);
+  if (error) throw error;
 };
 
 export const saveOrder = async (order: PhysicalOrder): Promise<void> => {
-  if (!supabase) return;
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return;
+  const client = getSupabase();
+  if (!client) throw new Error("Cloud setup required for orders.");
   
   const previewUrl = await uploadToStorage(order.previewImage, 'orders');
-  
-  await supabase.from('orders').insert({ 
+  const { error } = await client.from('orders').insert({ 
     id: order.id,
     timestamp: order.timestamp,
     paypal_order_id: order.paypalOrderId,
@@ -165,15 +174,16 @@ export const saveOrder = async (order: PhysicalOrder): Promise<void> => {
     item_name: order.itemName,
     amount: order.amount,
     status: order.status,
-    preview_image: previewUrl,
-    user_id: userData.user.id 
+    preview_image: previewUrl
   });
+  if (error) throw error;
 };
 
 export const getAllOrders = async (): Promise<PhysicalOrder[]> => {
-  if (!supabase) return [];
-  const { data, error } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
-  if (error) return [];
+  const client = getSupabase();
+  if (!client) return [];
+  const { data, error } = await client.from('orders').select('*').order('timestamp', { ascending: false });
+  if (error) throw error;
   
   return data.map((item: any) => ({
     id: item.id,
@@ -188,9 +198,9 @@ export const getAllOrders = async (): Promise<PhysicalOrder[]> => {
 };
 
 export const logApiCall = async (log: ApiLog): Promise<void> => {
-  if (!supabase) return;
-  const { data: userData } = await supabase.auth.getUser();
-  await supabase.from('api_logs').insert({ 
+  const client = getSupabase();
+  if (!client) return;
+  await client.from('api_logs').insert({ 
     id: log.id,
     timestamp: log.timestamp,
     user_session: log.userSession,
@@ -198,14 +208,14 @@ export const logApiCall = async (log: ApiLog): Promise<void> => {
     category: log.category,
     subcategory: log.subcategory,
     cost: log.cost,
-    status: log.status,
-    user_id: userData.user?.id || null 
+    status: log.status
   });
 };
 
 export const getApiLogs = async (): Promise<ApiLog[]> => {
-  if (!supabase) return [];
-  const { data, error } = await supabase.from('api_logs').select('*').order('timestamp', { ascending: false });
+  const client = getSupabase();
+  if (!client) return [];
+  const { data, error } = await client.from('api_logs').select('*').order('timestamp', { ascending: false });
   if (error) return [];
   
   return data.map((item: any) => ({
@@ -218,10 +228,4 @@ export const getApiLogs = async (): Promise<ApiLog[]> => {
     cost: item.cost,
     status: item.status
   }));
-};
-
-export const clearApiLogs = async (): Promise<void> => {
-  if (!supabase) return;
-  // Use a query that matches all rows without violating UUID type constraints
-  await supabase.from('api_logs').delete().not('id', 'is', null);
 };
