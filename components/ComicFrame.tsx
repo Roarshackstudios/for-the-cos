@@ -13,8 +13,9 @@ const ComicFrame: React.FC<ComicFrameProps> = ({ category, subcategory, customTi
 
   const rawTitle = customTitle || (subcategory === 'Auto Detect' ? category : subcategory);
   
-  // Stricter character limit for the title to prevent collision with the price badge.
-  const displayTitle = rawTitle.length > 24 ? rawTitle.substring(0, 21) + "..." : rawTitle;
+  // Increased character limit significantly to allow for longer titles as requested.
+  // Using 48 instead of 24 for a much wider span.
+  const displayTitle = rawTitle.length > 48 ? rawTitle.substring(0, 45) + "..." : rawTitle;
 
   return (
     <div className="absolute inset-0 pointer-events-none z-10 select-none overflow-hidden">
@@ -29,11 +30,11 @@ const ComicFrame: React.FC<ComicFrameProps> = ({ category, subcategory, customTi
 
       {/* 
           Main Title 
-          - Increased horizontal padding (px-28) to ensure clear distance from the badge.
-          - Use overflow-visible to ensure italics aren't clipped.
+          - Reduced horizontal padding (from px-28 to px-24) to give more room for the longer title.
+          - Added responsive font sizing to handle very long titles gracefully.
       */}
-      <div className="absolute top-8 left-0 right-0 flex justify-center px-28">
-        <h2 className="text-3xl md:text-4xl lg:text-5xl font-comic italic text-red-600 uppercase tracking-tight drop-shadow-[2px_2px_0px_rgba(255,255,255,1)] drop-shadow-[4px_4px_0px_rgba(0,0,0,1)] text-center leading-[0.85] transform -rotate-1 line-clamp-2 w-full break-words overflow-visible">
+      <div className="absolute top-6 left-0 right-0 flex justify-center px-24">
+        <h2 className="text-2xl md:text-3xl lg:text-4xl font-comic italic text-red-600 uppercase tracking-tight drop-shadow-[2px_2px_0px_rgba(255,255,255,1)] drop-shadow-[4px_4px_0px_rgba(0,0,0,1)] text-center leading-[0.9] transform -rotate-1 line-clamp-2 w-full break-words overflow-visible">
           {displayTitle}
         </h2>
       </div>
@@ -44,7 +45,7 @@ const ComicFrame: React.FC<ComicFrameProps> = ({ category, subcategory, customTi
       </div>
 
       {/* Grain Overlay */}
-      <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyBgYAAAD8puLMAAAAOnRFWHRDcmVhdGlvbiBUaW1lAFR1ZSAyNyBKdWwgMjAxMCAxMzo1Nzo0OCAtMDAwMHg56mUAAAAJcEhZcwAACxMAAAsTAQCanBgAAAAHdElNRQfaBxsNOCiVdG9JAAABNElEQVRo3u2XwQ3CMAxF70V66TpswAbMAqzALMAKbMAW7MB09BI2oBephS9K+S9VlVpC+Xm2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyX8PwAAAP//5m6T0gAAAMlJREFUOBHtlL0RgzAMhO8oGIBZmIAZmAAsQA9MQA/MQA9MQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA9O/D8DAAAA//8ZpHTRAAAAyUlEQVRYR+2XwQ3CMAxF70V66TpswAbMAqzALMAKbMAW7MB09BI2oBephS9K+S9VlVpC+Xm2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyX8PwAAAP//5m6T0gAAAMlJREFUOBHtlL0RgzAMhO8oGIBZmIAZmAAsQA9MQA/MQA9MQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA9O/D8DAAAA//8ZpHTRAAAAyUlEQVRYR+2XwQ3CMAxF70V66TpswAbMAqzALMAKbMAW7MB09BI2oBephS9K+S9VlVpC+Xm2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YX8PwAAAP//5m6T0gAAAABJRU5ErkJggg==')]"></div>
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyBgYAAAD8puLMAAAAOnRFWHRDcmVhdGlvbiBUaW1lAFR1ZSAyNyBKdWwgMjAxMCAxMzo1Nzo0OCAtMDAwMHg56mUAAAAJcEhZcwAACxMAAAsTAQCanBgAAAAHdElNRQfaBxsNOCiVdG9JAAABNElEQVRo3u2XwQ3CMAxF70V66TpswAbMAqzALMAKbMAW7MB09BI2oBephS9K+S9VlVpC+Xm2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyX8PwAAAP//5m6T0gAAAMlJREFUOBHtlL0RgzAMhO8oGIBZmIAZmAAsQA9MQA/MQA9MQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA9O/D8DAAAA//8ZpHTRAAAAyUlEQVRYR+2XwQ3CMAxF70V66TpswAbMAqzALMAKbMAW7MB09BI2oBephS9K+S9VlVpC+Xm2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyX8PwAAAP//5m6T0gAAAMlJREFUOBHtlL0RgzAMhO8oGIBZmIAZmAAsQA9MQA/MQA9MQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA8uQA9O/D8DAAAA//8ZpHTRAAAAyUlEQVRYR+2XwQ3CMAxF70V66TpswAbMAqzALMAKbMAW7MB09BI2oBephS9K+S9VlVpC+Xm2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YyW2YX8PwAAAP//5m6T0gAAAABJRU5ErkJggg==')]"></div>
     </div>
   );
 };
