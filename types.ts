@@ -16,6 +16,9 @@ export interface Subcategory {
 }
 
 export enum AppStep {
+  HOME = 'HOME',
+  COMMUNITY = 'COMMUNITY',
+  STUDIO = 'STUDIO',
   LOGIN = 'LOGIN',
   SIGNUP = 'SIGNUP',
   UPLOAD = 'UPLOAD',
@@ -23,32 +26,64 @@ export enum AppStep {
   SUBCATEGORY_SELECT = 'SUBCATEGORY_SELECT',
   PROCESSING = 'PROCESSING',
   RESULT = 'RESULT',
-  GALLERY = 'GALLERY'
+  GALLERY = 'GALLERY',
+  PROFILE = 'PROFILE',
+  VIEW_PROFILE = 'VIEW_PROFILE',
+  CHECKOUT = 'CHECKOUT'
 }
 
 export interface User {
   id: string;
   email: string;
-  password?: string; // Stored locally for demo purposes
+}
+
+export interface SocialLinks {
+  instagram?: string;
+  twitter?: string;
+  discord?: string;
+  website?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  display_name?: string;
+  avatar_url?: string;
+  socials?: SocialLinks;
+  created_at?: string;
+}
+
+export interface Comment {
+  id: string;
+  userId: string;
+  generationId: string;
+  content: string;
+  timestamp: number;
+  userProfile?: UserProfile;
+}
+
+export interface Like {
+  userId: string;
+  generationId: string;
 }
 
 export interface CardStats {
   strength: number;
   intelligence: number;
-  energy: number;
-  mental: number;
-  fighting: number;
+  agility: number;
   speed: number;
 }
 
 export interface AdminSettings {
   defaultTitle: string;
   defaultDescription: string;
-  paypalClientIdSandbox: string;
-  paypalClientIdProduction: string;
-  isPaypalProduction: boolean;
+  paypalLinkComic: string;
+  paypalLinkCard: string;
   priceComicPrint: number;
   priceCardSet: number;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
+  n8nWebhookUrl?: string;
 }
 
 export interface ApiLog {
@@ -59,24 +94,26 @@ export interface ApiLog {
   category: string;
   subcategory: string;
   cost: number;
-  status: 'success' | 'error';
+  status: string;
 }
 
 export interface PhysicalOrder {
   id: string;
+  userId: string;
   timestamp: number;
   paypalOrderId: string;
-  itemType: 'comic' | 'card';
+  itemType: string;
   itemName: string;
   amount: number;
-  status: 'paid' | 'shipped';
+  status: string;
   previewImage: string;
 }
 
 export interface SavedGeneration {
   id: string;
+  userId: string;
   timestamp: number;
-  image: string;
+  image: string; 
   name: string;
   category: string;
   type: 'raw' | 'comic' | 'card';
@@ -84,11 +121,18 @@ export interface SavedGeneration {
   description?: string;
   cardStatusText?: string;
   originalSourceImage?: string; 
+  resultScale?: number;
+  resultOffset?: { x: number; y: number };
+  isPublic?: boolean;
+  likeCount?: number;
+  commentCount?: number;
+  userProfile?: UserProfile;
 }
 
 export interface AppState {
   step: AppStep;
   currentUser: User | null;
+  targetProfile: UserProfile | null;
   sourceImage: string | null;
   selectedCategory: Category | null;
   selectedSubcategory: Subcategory | null;
