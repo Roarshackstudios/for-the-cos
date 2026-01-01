@@ -2,9 +2,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SavedGeneration, ApiLog, PhysicalOrder, User, UserProfile, Comment } from '../types';
 
-/**
- * Validates if a configuration string is a real value and not a placeholder or 'undefined'.
- */
 const isValid = (val: any): val is string => {
   if (typeof val !== 'string') return false;
   const trimmed = val.trim();
@@ -20,9 +17,6 @@ const isValid = (val: any): val is string => {
 let cachedClient: SupabaseClient | null = null;
 let cachedConfigKey: string | null = null;
 
-/**
- * Retrieves the Supabase client, prioritizing manual settings over environment variables.
- */
 export const getSupabase = (): SupabaseClient | null => {
   let targetUrl = '';
   let targetKey = '';
@@ -178,24 +172,18 @@ export const updateProfile = async (profile: Partial<UserProfile>): Promise<void
   };
 
   const { error } = await client.from('profiles').upsert(payload, { onConflict: 'id' });
-
-  if (error) {
-    if (error.message.includes('column') && error.message.includes('schema cache')) {
-      throw new Error("Profile synchronization failed. Please use the REPAIR script in Admin panel.");
-    }
-    throw error;
-  }
+  if (error) throw error;
 };
 
 export const toggleLike = async (userId: string, generationId: string): Promise<boolean> => {
   const client = getSupabase();
   if (!client) return false;
   
-  // Use maybeSingle to prevent error 406 when record is missing
   const { data: existing, error } = await client
     .from('likes')
-    .select('*')
-    .match({ user_id: userId, generation_id: generationId })
+    .select('user_id')
+    .eq('user_id', userId)
+    .eq('generation_id', generationId)
     .maybeSingle();
     
   if (error) throw error;
@@ -240,8 +228,12 @@ export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
   if (error) throw error;
 };
 
-const mapGeneration = (item: any, profile?: any): SavedGeneration => {
+const mapGeneration = (item: any, currentUserId?: string): SavedGeneration => {
   const transform = item.stats?._transform;
+  const likes = Array.isArray(item.likes) ? item.likes : [];
+  const likeCount = likes.length;
+  const userHasLiked = currentUserId ? likes.some((l: any) => l.user_id === currentUserId) : false;
+  
   return {
     id: item.id, 
     userId: item.user_id, 
@@ -257,24 +249,25 @@ const mapGeneration = (item: any, profile?: any): SavedGeneration => {
     resultScale: transform?.scale || 1,
     resultOffset: transform?.offset || { x: 0, y: 0 }, 
     isPublic: item.is_public,
-    likeCount: item.likes?.[0]?.count || 0, 
+    likeCount,
+    userHasLiked,
     commentCount: 0, 
-    userProfile: profile || item.profiles
+    userProfile: item.profiles
   };
 };
 
-export const getPublicGenerations = async (): Promise<SavedGeneration[]> => {
+export const getPublicGenerations = async (currentUserId?: string): Promise<SavedGeneration[]> => {
   const client = getSupabase();
   if (!client) return [];
   
   const { data, error } = await client
     .from('generations')
-    .select('*, profiles(*), likes(count)')
+    .select('*, profiles(*), likes(user_id)')
     .eq('is_public', true)
     .order('timestamp', { ascending: false });
 
   if (error) return [];
-  return data.map(item => mapGeneration(item));
+  return data.map(item => mapGeneration(item, currentUserId));
 };
 
 export const getAllGenerations = async (userId: string): Promise<SavedGeneration[]> => {
@@ -282,11 +275,11 @@ export const getAllGenerations = async (userId: string): Promise<SavedGeneration
   if (!client) return [];
   const { data, error } = await client
     .from('generations')
-    .select('*, likes(count)')
+    .select('*, profiles(*), likes(user_id)')
     .eq('user_id', userId)
     .order('timestamp', { ascending: false });
   if (error) return [];
-  return data.map(item => mapGeneration(item));
+  return data.map(item => mapGeneration(item, userId));
 };
 
 export const deleteGeneration = async (id: string): Promise<void> => {

@@ -125,6 +125,7 @@ export interface SavedGeneration {
   resultOffset?: { x: number; y: number };
   isPublic?: boolean;
   likeCount?: number;
+  userHasLiked?: boolean;
   commentCount?: number;
   userProfile?: UserProfile;
 }

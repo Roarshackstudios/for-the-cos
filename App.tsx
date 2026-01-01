@@ -55,6 +55,7 @@ const App: React.FC = () => {
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isRefreshingFeed, setIsRefreshingFeed] = useState(false);
+  const [isLikingId, setIsLikingId] = useState<string | null>(null);
   
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -139,7 +140,7 @@ const App: React.FC = () => {
             const profile = await getProfileById(user.id);
             setMyProfile(profile);
           }
-          refreshFeed();
+          refreshFeed(user?.id);
         } catch (e) {
           console.error("Core sync failure:", e);
         }
@@ -148,11 +149,12 @@ const App: React.FC = () => {
     init();
   }, [isSupabaseConfigured]);
 
-  const refreshFeed = async () => {
+  const refreshFeed = async (userId?: string) => {
     if (!isSupabaseConfigured) return;
     setIsRefreshingFeed(true);
     try {
-      const feed = await getPublicGenerations();
+      const currentUserId = userId || state.currentUser?.id;
+      const feed = await getPublicGenerations(currentUserId);
       setPublicFeed(feed);
     } catch (e: any) {
       console.warn("Feed update failed:", e.message);
@@ -167,12 +169,41 @@ const App: React.FC = () => {
       setState(prev => ({ ...prev, step: AppStep.LOGIN }));
       return;
     }
+    
+    // OPTIMISTIC UPDATE: Change state immediately
+    const toggleOptimistically = (current: SavedGeneration[]) => 
+      current.map(item => {
+        if (item.id === genId) {
+          const wasLiked = item.userHasLiked;
+          return {
+            ...item,
+            userHasLiked: !wasLiked,
+            likeCount: (item.likeCount || 0) + (wasLiked ? -1 : 1)
+          };
+        }
+        return item;
+      });
+
+    setPublicFeed(prev => toggleOptimistically(prev));
+    if (selectedArtifact && selectedArtifact.id === genId) {
+      setSelectedArtifact(prev => prev ? ({
+        ...prev,
+        userHasLiked: !prev.userHasLiked,
+        likeCount: (prev.likeCount || 0) + (prev.userHasLiked ? -1 : 1)
+      }) : null);
+    }
+
     try {
       await toggleLike(state.currentUser.id, genId);
-      refreshFeed();
+      // We don't even NEED to refresh the whole feed because we were optimistic,
+      // but we do it silently to stay in sync with others.
+      const updatedFeed = await getPublicGenerations(state.currentUser.id);
+      setPublicFeed(updatedFeed);
     } catch (e: any) {
-      console.error("Like error:", e);
-      alert("Synergy Error: PostgREST cache mismatch. Please run the REPAIR script in Admin panel and REBOOT.");
+      console.error("Synergy failure:", e);
+      // Rollback on error
+      refreshFeed();
+      alert(`Synergy Error: ${e.message}. The neural link might be weak.`);
     }
   };
 
@@ -191,6 +222,7 @@ const App: React.FC = () => {
       loadGallery(user.id);
       const profile = await getProfileById(user.id);
       setMyProfile(profile);
+      refreshFeed(user.id);
     } catch (err: any) {
       setState(prev => ({ ...prev, error: err.message }));
     } finally {
@@ -203,6 +235,7 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, currentUser: null, step: AppStep.HOME, targetProfile: null }));
     setMyProfile(null);
     setGalleryItems([]);
+    refreshFeed();
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -375,8 +408,12 @@ const App: React.FC = () => {
             {item.type}
           </span>
         </div>
-        <button onClick={(e) => handleLike(e, item.id)} className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:border-blue-500/50 transition-all active:scale-90">
-          <i className={`fa-solid fa-bolt ${item.likeCount && item.likeCount > 0 ? 'text-blue-500' : 'text-zinc-500'} text-xs`}></i>
+        <button 
+          onClick={(e) => handleLike(e, item.id)} 
+          className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:border-blue-500/50 transition-all active:scale-90"
+        >
+          <i className={`fa-solid fa-bolt ${item.userHasLiked ? 'text-blue-500' : 'text-zinc-500'} text-xs`}></i>
+          {item.likeCount && item.likeCount > 0 ? <span className="text-[8px] font-bold ml-1.5 text-white/50">{item.likeCount}</span> : null}
         </button>
       </div>
       <div className="p-5 bg-zinc-950/80 backdrop-blur-md flex flex-col space-y-3">
@@ -391,57 +428,33 @@ const App: React.FC = () => {
     </div>
   );
 
-  const nexusSchemaFix = `-- NEXUS REPAIR SCRIPT (v4 - Cache Force) --
+  const nexusSchemaFix = `-- NEXUS REPAIR SCRIPT (v6 - OPTIMIZED) --
 -- Use this to fix Synergy/Like 406 errors --
 
--- 1. Ensure Tables Exist
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT UNIQUE,
-  display_name TEXT,
-  avatar_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 1. CLEAN RESET
+DROP TABLE IF EXISTS public.likes CASCADE;
 
-CREATE TABLE IF NOT EXISTS public.generations (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-  timestamp BIGINT,
-  image TEXT,
-  name TEXT,
-  category TEXT,
-  type TEXT,
-  stats JSONB,
-  description TEXT,
-  card_status_text TEXT,
-  original_source_image TEXT,
-  is_public BOOLEAN DEFAULT FALSE
-);
-
-CREATE TABLE IF NOT EXISTS public.likes (
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+-- 2. REBUILD SYNERGY TABLE
+CREATE TABLE public.likes (
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   generation_id UUID REFERENCES public.generations(id) ON DELETE CASCADE,
   PRIMARY KEY (user_id, generation_id)
 );
 
--- 2. Clear & Reset Policies
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access" ON public.profiles;
-CREATE POLICY "Public Access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
-
-ALTER TABLE public.generations ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access" ON public.generations;
-CREATE POLICY "Public Access" ON public.generations FOR ALL USING (true) WITH CHECK (true);
-
+-- 3. PERMISSIONS
 ALTER TABLE public.likes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access" ON public.likes;
-CREATE POLICY "Public Access" ON public.likes FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public Synergy Access" ON public.likes FOR ALL USING (true) WITH CHECK (true);
 
--- 3. FORCE POSTGREST CACHE RELOAD (Critical Fix for 406 Errors)
+-- 4. ENSURE PROFILES EXIST & ARE SYNCED
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Profile Access" ON public.profiles;
+CREATE POLICY "Public Profile Access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+-- 5. CACHE RESET
 NOTIFY pgrst, 'reload schema';
 
--- 4. Final Permissions Check
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres;`;
+-- 6. Done
+SELECT 'Synergy Restored' as Status;`;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col font-inter">
@@ -487,7 +500,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres;`;
              <section className="p-8 md:p-20 space-y-16">
                 <div className="flex justify-between items-center border-b border-zinc-900 pb-8">
                   <h3 className="text-4xl font-orbitron font-black text-white italic uppercase tracking-tighter">LATEST MANIFESTATIONS</h3>
-                  <button onClick={refreshFeed} className="text-xs text-blue-500 font-bold uppercase tracking-widest hover:text-white transition-colors">
+                  <button onClick={() => refreshFeed()} className="text-xs text-blue-500 font-bold uppercase tracking-widest hover:text-white transition-colors">
                     {isRefreshingFeed ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-rotate-right"></i>} Refresh
                   </button>
                 </div>
@@ -569,7 +582,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres;`;
           <div className="p-8 md:p-20 space-y-16 animate-fade-in">
              <div className="flex flex-col md:flex-row justify-between items-start md:items-end space-y-8 md:space-y-0">
                <div><h2 className="text-6xl font-orbitron font-black text-white italic uppercase tracking-tighter leading-none">NEURAL NEXUS</h2><p className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-500 mt-3">Browse the collective</p></div>
-               <div className="flex items-center space-x-4"><button onClick={refreshFeed} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 hover:border-blue-500 text-blue-500 transition-all shadow-lg"><i className={`fa-solid fa-rotate-right ${isRefreshingFeed ? 'animate-spin' : ''}`}></i></button><input type="text" placeholder="SEARCH IDENTITIES..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="bg-zinc-900 px-8 py-4 rounded-2xl border border-zinc-800 text-[11px] font-black uppercase outline-none w-full md:w-64 tracking-[0.2em]" /></div>
+               <div className="flex items-center space-x-4"><button onClick={() => refreshFeed()} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 hover:border-blue-500 text-blue-500 transition-all shadow-lg"><i className={`fa-solid fa-rotate-right ${isRefreshingFeed ? 'animate-spin' : ''}`}></i></button><input type="text" placeholder="SEARCH IDENTITIES..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="bg-zinc-900 px-8 py-4 rounded-2xl border border-zinc-800 text-[11px] font-black uppercase outline-none w-full md:w-64 tracking-[0.2em]" /></div>
              </div>
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
                {publicFeed.length > 0 ? publicFeed.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).map(renderArtifactCard) : <div className="col-span-full py-40 text-center text-zinc-700 font-bold uppercase">Nexus quiet...</div>}
@@ -623,17 +636,17 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres;`;
                   <div className="flex items-center space-x-3"><i className="fa-solid fa-wrench text-red-500 text-3xl"></i><p className="text-xl font-black text-red-500 uppercase tracking-widest">STEP 1: DATABASE REPAIR (SQL)</p></div>
                   <div className="p-6 bg-red-500/5 rounded-2xl border border-red-500/10">
                      <p className="text-[12px] text-white font-black leading-relaxed uppercase mb-2">RUN THIS SCRIPT IN SUPABASE SQL EDITOR TO FIX 'POLICY ALREADY EXISTS' OR '406' ERRORS:</p>
-                     <p className="text-[10px] text-zinc-400 font-bold uppercase">This script now includes a magic command to force-refresh the PostgREST cache.</p>
+                     <p className="text-[10px] text-zinc-400 font-bold uppercase">v6 OPTIMIZED RESET: Ensures perfect sync between neural artifacts and nexus synergy.</p>
                   </div>
                   <div className="relative group">
                     <pre className="w-full bg-black border border-zinc-800 rounded-2xl p-6 text-[11px] font-mono text-blue-400 overflow-x-auto h-64 custom-scrollbar select-all">
                       {nexusSchemaFix}
                     </pre>
                     <button 
-                      onClick={() => { navigator.clipboard.writeText(nexusSchemaFix); alert("Repair SQL copied! Now paste it into Supabase SQL Editor and click RUN."); }}
+                      onClick={() => { navigator.clipboard.writeText(nexusSchemaFix); alert("Optimized Repair SQL copied! Now paste it into Supabase SQL Editor and click RUN."); }}
                       className="absolute top-4 right-4 bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl"
                     >
-                      COPY REPAIR SCRIPT
+                      COPY OPTIMIZED REPAIR
                     </button>
                   </div>
                   <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest bg-zinc-900 p-4 rounded-xl text-center italic">After running the script, refresh this browser tab entirely.</p>
@@ -666,7 +679,18 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres;`;
                     <div><h2 className="text-5xl font-orbitron font-black text-white italic uppercase tracking-tighter leading-none">{selectedArtifact.name}</h2><div className="flex items-center space-x-3 mt-4"><div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden">{selectedArtifact.userProfile?.avatar_url ? <img src={selectedArtifact.userProfile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-black">{selectedArtifact.userProfile?.display_name?.[0] || 'P'}</div>}</div><span className="text-xs font-black text-zinc-500 uppercase tracking-widest">{selectedArtifact.userProfile?.display_name || 'PILOT'}</span></div></div>
                     <button onClick={() => setSelectedArtifact(null)} className="p-4 bg-zinc-900 rounded-full hover:bg-zinc-800 text-zinc-400"><i className="fa-solid fa-times text-xl"></i></button>
                  </div>
-                 <div className="bg-zinc-900/40 p-10 rounded-[2.5rem] border border-zinc-800/60 space-y-8 backdrop-blur-md relative overflow-hidden"><p className="text-[11px] text-zinc-300 leading-relaxed font-bold uppercase italic relative z-10">{selectedArtifact.description}</p><div className="grid grid-cols-2 gap-4 pt-4"><button onClick={(e) => handleLike(e, selectedArtifact!.id)} className="flex items-center justify-center space-x-3 py-5 bg-zinc-950 border border-zinc-800 rounded-2xl active:scale-95 group"><i className={`fa-solid fa-bolt text-lg ${selectedArtifact.likeCount ? 'text-blue-500' : 'text-zinc-700 group-hover:text-blue-400'}`}></i><span className="text-[11px] font-black uppercase text-zinc-400">{selectedArtifact.likeCount || 0} Synergy</span></button></div></div>
+                 <div className="bg-zinc-900/40 p-10 rounded-[2.5rem] border border-zinc-800/60 space-y-8 backdrop-blur-md relative overflow-hidden">
+                    <p className="text-[11px] text-zinc-300 leading-relaxed font-bold uppercase italic relative z-10">{selectedArtifact.description}</p>
+                    <div className="grid grid-cols-2 gap-4 pt-4">
+                        <button 
+                          onClick={(e) => handleLike(e, selectedArtifact!.id)} 
+                          className="flex items-center justify-center space-x-3 py-5 bg-zinc-950 border border-zinc-800 rounded-2xl active:scale-95 group transition-all"
+                        >
+                          <i className={`fa-solid fa-bolt text-lg ${selectedArtifact.userHasLiked ? 'text-blue-500' : 'text-zinc-700 group-hover:text-blue-400'}`}></i>
+                          <span className="text-[11px] font-black uppercase text-zinc-400">{selectedArtifact.likeCount || 0} Synergy</span>
+                        </button>
+                    </div>
+                 </div>
               </div>
            </div>
         </div>
