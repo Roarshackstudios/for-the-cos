@@ -63,7 +63,6 @@ const App: React.FC = () => {
   const [selectedArtifact, setSelectedArtifact] = useState<SavedGeneration | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Purchase & Verification State
   const [isVerifyingWithN8n, setIsVerifyingWithN8n] = useState(false);
   const [isPaymentSuccess, setIsPaymentSuccess] = useState(false);
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
@@ -95,10 +94,8 @@ const App: React.FC = () => {
 
   const [isFlipped, setIsFlipped] = useState(false);
 
-  // isAdmin helper
   const isAdmin = (state.currentUser?.email?.toLowerCase() === ADMIN_EMAIL_LOWER) || !isSupabaseConfigured || (!state.currentUser);
 
-  // Verification Polling
   useEffect(() => {
     let interval: any;
     if (isVerifyingWithN8n && pendingOrderId) {
@@ -175,7 +172,7 @@ const App: React.FC = () => {
       refreshFeed();
     } catch (e: any) {
       console.error("Like error:", e);
-      alert("Synergy Error: Ensure the 'likes' table exists and columns are named 'user_id' and 'generation_id'. Run the REPAIR script in the Admin panel.");
+      alert("Synergy Error: PostgREST cache mismatch. Please run the REPAIR script in Admin panel and REBOOT.");
     }
   };
 
@@ -394,22 +391,18 @@ const App: React.FC = () => {
     </div>
   );
 
-  const nexusSchemaFix = `-- NEXUS REPAIR SCRIPT (Idempotent) --
--- Use this to fix Synergy/Like errors or missing columns --
+  const nexusSchemaFix = `-- NEXUS REPAIR SCRIPT (v4 - Cache Force) --
+-- Use this to fix Synergy/Like 406 errors --
 
--- 1. Create Profiles Table & Columns
+-- 1. Ensure Tables Exist
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE,
   display_name TEXT,
   avatar_url TEXT,
-  socials JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS display_name TEXT;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
--- 2. Create Generations Table
 CREATE TABLE IF NOT EXISTS public.generations (
   id UUID PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -424,30 +417,14 @@ CREATE TABLE IF NOT EXISTS public.generations (
   original_source_image TEXT,
   is_public BOOLEAN DEFAULT FALSE
 );
-ALTER TABLE public.generations ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;
 
--- 3. Create Synergy (Likes) Table
 CREATE TABLE IF NOT EXISTS public.likes (
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   generation_id UUID REFERENCES public.generations(id) ON DELETE CASCADE,
   PRIMARY KEY (user_id, generation_id)
 );
 
--- 4. Create Physical Orders Table
-CREATE TABLE IF NOT EXISTS public.orders (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-  timestamp BIGINT,
-  paypal_order_id TEXT,
-  item_type TEXT,
-  item_name TEXT,
-  amount DECIMAL,
-  status TEXT DEFAULT 'pending',
-  preview_image TEXT
-);
-
--- 5. Set up Row Level Security & Policies
--- We drop policies first to prevent 'already exists' errors
+-- 2. Clear & Reset Policies
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access" ON public.profiles;
 CREATE POLICY "Public Access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
@@ -460,9 +437,11 @@ ALTER TABLE public.likes ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access" ON public.likes;
 CREATE POLICY "Public Access" ON public.likes FOR ALL USING (true) WITH CHECK (true);
 
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Access" ON public.orders;
-CREATE POLICY "Public Access" ON public.orders FOR ALL USING (true) WITH CHECK (true);`;
+-- 3. FORCE POSTGREST CACHE RELOAD (Critical Fix for 406 Errors)
+NOTIFY pgrst, 'reload schema';
+
+-- 4. Final Permissions Check
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, postgres;`;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col font-inter">
@@ -644,7 +623,7 @@ CREATE POLICY "Public Access" ON public.orders FOR ALL USING (true) WITH CHECK (
                   <div className="flex items-center space-x-3"><i className="fa-solid fa-wrench text-red-500 text-3xl"></i><p className="text-xl font-black text-red-500 uppercase tracking-widest">STEP 1: DATABASE REPAIR (SQL)</p></div>
                   <div className="p-6 bg-red-500/5 rounded-2xl border border-red-500/10">
                      <p className="text-[12px] text-white font-black leading-relaxed uppercase mb-2">RUN THIS SCRIPT IN SUPABASE SQL EDITOR TO FIX 'POLICY ALREADY EXISTS' OR '406' ERRORS:</p>
-                     <p className="text-[10px] text-zinc-400 font-bold uppercase">This script is safe to run multiple times. It handles existing policies and ensures all columns match the synergy engine.</p>
+                     <p className="text-[10px] text-zinc-400 font-bold uppercase">This script now includes a magic command to force-refresh the PostgREST cache.</p>
                   </div>
                   <div className="relative group">
                     <pre className="w-full bg-black border border-zinc-800 rounded-2xl p-6 text-[11px] font-mono text-blue-400 overflow-x-auto h-64 custom-scrollbar select-all">

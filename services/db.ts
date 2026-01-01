@@ -114,8 +114,6 @@ const uploadToStorage = async (base64: string, path: string): Promise<string> =>
 const syncProfile = async (user: User) => {
   const client = getSupabase();
   if (!client) return;
-  // Use a minimal upsert to avoid triggering "column does not exist" on display_name or avatar_url
-  // if the schema is not yet fully initialized.
   await client.from('profiles').upsert({ id: user.id, email: user.email.toLowerCase() }, { onConflict: 'id' });
 };
 
@@ -183,7 +181,7 @@ export const updateProfile = async (profile: Partial<UserProfile>): Promise<void
 
   if (error) {
     if (error.message.includes('column') && error.message.includes('schema cache')) {
-      throw new Error("Profile synchronization failed due to a missing column in the database cache. Please go to the Admin panel (Gear icon) and execute the 'NEXUS SCHEMA FIX' SQL script, then reboot.");
+      throw new Error("Profile synchronization failed. Please use the REPAIR script in Admin panel.");
     }
     throw error;
   }
@@ -192,7 +190,16 @@ export const updateProfile = async (profile: Partial<UserProfile>): Promise<void
 export const toggleLike = async (userId: string, generationId: string): Promise<boolean> => {
   const client = getSupabase();
   if (!client) return false;
-  const { data: existing } = await client.from('likes').select('*').match({ user_id: userId, generation_id: generationId }).single();
+  
+  // Use maybeSingle to prevent error 406 when record is missing
+  const { data: existing, error } = await client
+    .from('likes')
+    .select('*')
+    .match({ user_id: userId, generation_id: generationId })
+    .maybeSingle();
+    
+  if (error) throw error;
+
   if (existing) {
     await client.from('likes').delete().match({ user_id: userId, generation_id: generationId });
     return false;
@@ -200,23 +207,6 @@ export const toggleLike = async (userId: string, generationId: string): Promise<
     await client.from('likes').insert({ user_id: userId, generation_id: generationId });
     return true;
   }
-};
-
-export const addComment = async (userId: string, generationId: string, content: string): Promise<void> => {
-  const client = getSupabase();
-  if (!client) return;
-  await client.from('comments').insert({ user_id: userId, generation_id: generationId, content });
-};
-
-export const getComments = async (generationId: string): Promise<Comment[]> => {
-  const client = getSupabase();
-  if (!client) return [];
-  const { data, error } = await client.from('comments').select(`*, profiles(*)`).eq('generation_id', generationId).order('created_at', { ascending: true });
-  if (error) return [];
-  return data.map((c: any) => ({
-    id: c.id, userId: c.user_id, generationId: c.generation_id, content: c.content,
-    timestamp: new Date(c.created_at).getTime(), userProfile: c.profiles
-  }));
 };
 
 export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
@@ -246,28 +236,10 @@ export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
     is_public: gen.isPublic || false
   };
 
-  try {
-    const { error } = await client.from('generations').upsert(payload);
-    if (error) {
-      if (error.message.includes('is_public') || error.code === '42703') {
-        if (gen.isPublic) {
-          throw new Error("Broadcasting to Nexus requires the 'is_public' column. Go to the Admin panel (gear icon) and run the SQL fix.");
-        }
-        delete payload.is_public;
-        const { error: retryError } = await client.from('generations').upsert(payload);
-        if (retryError) throw retryError;
-      } else {
-        throw error;
-      }
-    }
-  } catch (err: any) {
-    throw new Error(err.message);
-  }
+  const { error } = await client.from('generations').upsert(payload);
+  if (error) throw error;
 };
 
-/**
- * Maps raw database items to SavedGeneration objects.
- */
 const mapGeneration = (item: any, profile?: any): SavedGeneration => {
   const transform = item.stats?._transform;
   return {
@@ -295,46 +267,24 @@ export const getPublicGenerations = async (): Promise<SavedGeneration[]> => {
   const client = getSupabase();
   if (!client) return [];
   
-  try {
-    const { data: rawGens, error: genError } = await client
-      .from('generations')
-      .select('*')
-      .eq('is_public', true)
-      .order('timestamp', { ascending: false });
+  const { data, error } = await client
+    .from('generations')
+    .select('*, profiles(*), likes(count)')
+    .eq('is_public', true)
+    .order('timestamp', { ascending: false });
 
-    if (genError || !rawGens) {
-      console.warn("Nexus generation fetch failed:", genError?.message);
-      return [];
-    }
-
-    const userIds = [...new Set(rawGens.map(g => g.user_id).filter(Boolean))];
-    let profilesMap: Record<string, any> = {};
-    
-    if (userIds.length > 0) {
-      const { data: profiles, error: profError } = await client
-        .from('profiles')
-        .select('*')
-        .in('id', userIds);
-      
-      if (!profError && profiles) {
-        profilesMap = profiles.reduce((acc: any, p: any) => ({ ...acc, [p.id]: p }), {});
-      } else {
-        console.warn("Nexus profile sync failed:", profError?.message);
-      }
-    }
-
-    return rawGens.map(item => mapGeneration(item, profilesMap[item.user_id]));
-
-  } catch (err) {
-    console.error("Critical Nexus communication failure:", err);
-    return [];
-  }
+  if (error) return [];
+  return data.map(item => mapGeneration(item));
 };
 
 export const getAllGenerations = async (userId: string): Promise<SavedGeneration[]> => {
   const client = getSupabase();
   if (!client) return [];
-  const { data, error } = await client.from('generations').select('*').eq('user_id', userId).order('timestamp', { ascending: false });
+  const { data, error } = await client
+    .from('generations')
+    .select('*, likes(count)')
+    .eq('user_id', userId)
+    .order('timestamp', { ascending: false });
   if (error) return [];
   return data.map(item => mapGeneration(item));
 };
@@ -354,15 +304,5 @@ export const saveOrder = async (order: PhysicalOrder): Promise<void> => {
     paypal_order_id: order.paypalOrderId, item_type: order.itemType,
     item_name: order.itemName, amount: order.amount, status: order.status,
     preview_image: previewUrl
-  });
-};
-
-export const logApiCall = async (log: ApiLog): Promise<void> => {
-  const client = getSupabase();
-  if (!client) return;
-  await client.from('api_logs').insert({ 
-    id: log.id, timestamp: log.timestamp, user_session: log.userSession,
-    model: log.model, category: log.category, subcategory: log.subcategory,
-    cost: log.cost, status: log.status
   });
 };
