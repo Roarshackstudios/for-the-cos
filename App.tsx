@@ -56,6 +56,7 @@ const App: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
+  const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
   
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -206,7 +207,12 @@ const App: React.FC = () => {
       alert("HERO DATA UPDATED!");
       loadProfiles();
     } catch (err: any) {
-      alert("UPDATE FAILED: " + err.message);
+      const msg = err.message || String(err);
+      if (msg.includes('socials') || msg.includes('schema cache')) {
+        alert("CRITICAL ERROR: Your Supabase database is missing the 'socials' column in the 'profiles' table.\n\nPlease run this in your Supabase SQL Editor:\n\nALTER TABLE profiles ADD COLUMN socials JSONB DEFAULT '{}'::JSONB;");
+      } else {
+        alert("UPDATE FAILED: " + msg);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -560,7 +566,21 @@ const App: React.FC = () => {
       <div className="p-4 flex flex-col space-y-2 bg-white text-black">
         <h4 className="font-comic text-3xl uppercase truncate tracking-tight leading-none italic">{item.name}</h4>
         <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">By {item.userProfile?.display_name || 'Hero'}</span>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setViewingProfile(item.userProfile || null); }}
+              className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-[#e21c23] flex items-center gap-2 group/btn"
+            >
+              <div className="w-6 h-6 rounded-full bg-zinc-200 overflow-hidden border-2 border-black shrink-0 group-hover/btn:scale-110 transition-transform">
+                {item.userProfile?.avatar_url ? (
+                  <img src={item.userProfile.avatar_url} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-black flex items-center justify-center text-[8px] text-white font-black uppercase tracking-tighter italic">
+                    {item.userProfile?.display_name?.[0] || 'H'}
+                  </div>
+                )}
+              </div>
+              BY {item.userProfile?.display_name || 'HERO'}
+            </button>
             <button onClick={(e) => handleLike(e, item.id)} className="text-[#e21c23] hover:scale-125 transition-transform">
                 <i className={`fa-solid fa-heart ${item.userHasLiked ? 'text-[#e21c23]' : 'text-zinc-300'}`}></i> {item.likeCount || 0}
             </button>
@@ -570,7 +590,7 @@ const App: React.FC = () => {
   );
 
   const renderCreatorBadge = (profile: UserProfile) => (
-    <div key={profile.id} className="flex flex-col items-center space-y-4 group cursor-pointer" onClick={() => {}}>
+    <div key={profile.id} className="flex flex-col items-center space-y-4 group cursor-pointer" onClick={() => setViewingProfile(profile)}>
       <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-8 border-black overflow-hidden shadow-[8px_8px_0px_#660000] group-hover:-translate-y-2 transition-transform">
         {profile.avatar_url ? (
           <img src={profile.avatar_url} className="w-full h-full object-cover" />
@@ -743,14 +763,14 @@ const App: React.FC = () => {
                          </div>
                          <div className="space-y-4">
                             <label className="block text-sm font-black uppercase flex items-center gap-2">
-                               <i className="fa-solid fa-globe"></i> Website
+                               <i className="fa-solid fa-globe"></i> Website / Base
                             </label>
                             <input 
                               type="text" 
                               value={myProfile.socials?.website || ''} 
                               onChange={e => setMyProfile({...myProfile, socials: {...(myProfile.socials || {}), website: e.target.value}})}
                               className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold outline-none focus:bg-yellow-50" 
-                              placeholder="https://..."
+                              placeholder="https://yourwebsite.com"
                             />
                          </div>
                       </div>
@@ -999,6 +1019,61 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Hero Profile Detail View (Popup for any user) */}
+      {viewingProfile && (
+        <div className="fixed inset-0 z-[600] bg-black/90 flex items-center justify-center p-8 animate-fade-in backdrop-blur-sm" onClick={() => setViewingProfile(null)}>
+          <div className="max-w-2xl w-full bg-white border-8 border-black p-12 space-y-10 shadow-[20px_20px_0px_#660000] text-black relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setViewingProfile(null)} className="absolute top-4 right-4 p-4 hover:text-[#e21c23] transition-colors"><i className="fa-solid fa-times text-4xl"></i></button>
+            <div className="flex flex-col items-center text-center space-y-6">
+               <div className="w-32 h-32 md:w-48 md:h-48 rounded-full border-8 border-black overflow-hidden shadow-xl bg-[#fde910]">
+                 {viewingProfile.avatar_url ? (
+                   <img src={viewingProfile.avatar_url} className="w-full h-full object-cover" />
+                 ) : (
+                   <div className="w-full h-full flex items-center justify-center text-6xl font-black">
+                     {viewingProfile.display_name?.[0] || 'H'}
+                   </div>
+                 )}
+               </div>
+               <div className="space-y-2">
+                 <h2 className="text-6xl md:text-7xl font-comic comic-text-3d uppercase italic tracking-tighter">{viewingProfile.display_name || 'MYSTERY HERO'}</h2>
+                 <p className="text-xl font-black uppercase text-zinc-400 tracking-widest italic">{viewingProfile.email}</p>
+               </div>
+            </div>
+
+            <div className="bg-zinc-50 p-8 border-4 border-black shadow-[8px_8px_0px_#660000] space-y-8">
+               <p className="text-3xl font-comic uppercase tracking-widest text-[#e21c23] italic">HERO INTEL / SOCIALS</p>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 {viewingProfile.socials?.instagram && (
+                   <a href={`https://instagram.com/${viewingProfile.socials.instagram.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 text-2xl font-bold hover:text-[#e21c23] transition-colors">
+                     <i className="fa-brands fa-instagram text-4xl text-[#e21c23]"></i> {viewingProfile.socials.instagram}
+                   </a>
+                 )}
+                 {viewingProfile.socials?.twitter && (
+                   <a href={`https://twitter.com/${viewingProfile.socials.twitter.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 text-2xl font-bold hover:text-[#e21c23] transition-colors">
+                     <i className="fa-brands fa-twitter text-4xl text-[#3b82f6]"></i> {viewingProfile.socials.twitter}
+                   </a>
+                 )}
+                 {viewingProfile.socials?.discord && (
+                   <div className="flex items-center gap-4 text-2xl font-bold text-zinc-600">
+                     <i className="fa-brands fa-discord text-4xl"></i> {viewingProfile.socials.discord}
+                   </div>
+                 )}
+                 {viewingProfile.socials?.website && (
+                   <a href={viewingProfile.socials.website.startsWith('http') ? viewingProfile.socials.website : `https://${viewingProfile.socials.website}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 text-2xl font-bold hover:text-[#e21c23] transition-colors col-span-1 md:col-span-2 bg-[#fde910]/20 p-4 border-2 border-dashed border-black">
+                     <i className="fa-solid fa-globe text-4xl text-[#fde910] drop-shadow-[2px_2px_0px_#000]"></i> VISIT HERO BASE (EXTERNAL SITE)
+                   </a>
+                 )}
+                 {(!viewingProfile.socials || Object.values(viewingProfile.socials).every(v => !v)) && (
+                   <p className="col-span-2 text-zinc-400 font-bold uppercase italic text-center py-4">No social frequencies detected.</p>
+                 )}
+               </div>
+            </div>
+
+            <button onClick={() => setViewingProfile(null)} className="action-btn-yellow w-full py-6 text-3xl">CLOSE INTEL</button>
+          </div>
+        </div>
+      )}
+
       {selectedArtifact && (
         <div className="fixed inset-0 z-[500] bg-black/95 flex items-center justify-center p-10 md:p-32 overflow-y-auto animate-fade-in" onClick={() => { setIsFlipped(false); setSelectedArtifact(null); }}>
            <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-12 gap-24 items-center" onClick={e => e.stopPropagation()}>
@@ -1018,7 +1093,21 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="lg:col-span-5 space-y-16">
-                 <div className="flex justify-between items-start"><div className="space-y-8"><h2 className="text-8xl md:text-10xl font-comic text-white italic uppercase tracking-tighter leading-none comic-text-3d">{selectedArtifact.name}</h2><div className="bg-white p-4 border-8 border-black inline-block -rotate-3"><span className="text-3xl font-comic text-black uppercase">By {selectedArtifact.userProfile?.display_name || 'Hero'}</span></div></div><button onClick={() => { setIsFlipped(false); setSelectedArtifact(null); }} className="p-8 bg-white border-8 border-black hover:bg-[#e21c23] hover:text-white transition-all"><i className="fa-solid fa-times text-5xl"></i></button></div>
+                 <div className="flex justify-between items-start">
+                   <div className="space-y-8">
+                     <h2 className="text-8xl md:text-10xl font-comic text-white italic uppercase tracking-tighter leading-none comic-text-3d">{selectedArtifact.name}</h2>
+                     <button 
+                       onClick={() => setViewingProfile(selectedArtifact.userProfile || null)}
+                       className="bg-white p-4 border-8 border-black inline-block -rotate-3 hover:scale-105 transition-transform flex items-center gap-4"
+                     >
+                       <div className="w-10 h-10 rounded-full bg-zinc-200 border-2 border-black overflow-hidden shrink-0">
+                          {selectedArtifact.userProfile?.avatar_url && <img src={selectedArtifact.userProfile.avatar_url} className="w-full h-full object-cover" />}
+                       </div>
+                       <span className="text-3xl font-comic text-black uppercase">By {selectedArtifact.userProfile?.display_name || 'Hero'}</span>
+                     </button>
+                   </div>
+                   <button onClick={() => { setIsFlipped(false); setSelectedArtifact(null); }} className="p-8 bg-white border-8 border-black hover:bg-[#e21c23] hover:text-white transition-all shrink-0 ml-4"><i className="fa-solid fa-times text-5xl"></i></button>
+                 </div>
                  <div className="bg-white p-12 border-8 border-black shadow-[15px_15px_0px_#660000] space-y-10 text-black">
                     <p className="text-2xl font-bold uppercase italic leading-tight">{selectedArtifact.description}</p>
                     <div className="flex flex-col space-y-4 pt-4">
