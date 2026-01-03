@@ -1,4 +1,3 @@
-
 import React, { useRef, useState } from 'react';
 
 interface PhotoStepProps {
@@ -19,7 +18,7 @@ const PhotoStep: React.FC<PhotoStepProps> = ({ onPhotoSelected }) => {
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
-      alert("Could not access camera. Please check permissions.");
+      alert("Camera failed!");
       setUseCamera(false);
     }
   };
@@ -59,28 +58,29 @@ const PhotoStep: React.FC<PhotoStepProps> = ({ onPhotoSelected }) => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 space-y-8">
-      <div className="text-center space-y-4">
-        <h2 className="text-4xl font-orbitron font-bold tracking-widest text-blue-500">INITIATE COSPLAY</h2>
-        <p className="text-gray-400 max-w-md mx-auto">Upload your masterpiece or capture your moment to begin the transformation.</p>
-      </div>
-
+    <div className="flex flex-col items-center justify-center p-12 space-y-16">
       {!useCamera ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-16 w-full max-w-5xl">
           <button 
             onClick={startCamera}
-            className="flex flex-col items-center justify-center p-12 bg-zinc-900 border-2 border-dashed border-blue-500/30 rounded-3xl hover:border-blue-500 hover:bg-zinc-800 transition-all group"
+            className="flex flex-col items-center justify-center p-20 bg-[#e21c23] text-white border-8 border-black shadow-[15px_15px_0px_#660000] hover:scale-105 hover:-translate-y-2 transition-all group"
           >
-            <i className="fa-solid fa-camera text-5xl mb-4 text-blue-500 group-hover:scale-110 transition-transform"></i>
-            <span className="font-semibold text-xl">Camera</span>
+            <div className="w-32 h-32 rounded-full bg-black flex items-center justify-center mb-8 border-4 border-white">
+                <i className="fa-solid fa-camera text-6xl text-[#fde910]"></i>
+            </div>
+            <span className="font-comic text-5xl uppercase italic tracking-wider">TAKE A PHOTO!</span>
+            <p className="text-lg font-bold uppercase mt-4 opacity-70">USE YOUR DEVICE LENS</p>
           </button>
 
           <button 
             onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center justify-center p-12 bg-zinc-900 border-2 border-dashed border-purple-500/30 rounded-3xl hover:border-purple-500 hover:bg-zinc-800 transition-all group"
+            className="flex flex-col items-center justify-center p-20 bg-[#fde910] text-black border-8 border-black shadow-[15px_15px_0px_#660000] hover:scale-105 hover:-translate-y-2 transition-all group"
           >
-            <i className="fa-solid fa-upload text-5xl mb-4 text-purple-500 group-hover:scale-110 transition-transform"></i>
-            <span className="font-semibold text-xl">Upload</span>
+            <div className="w-32 h-32 rounded-full bg-black flex items-center justify-center mb-8 border-4 border-white">
+                <i className="fa-solid fa-file-export text-6xl text-[#e21c23]"></i>
+            </div>
+            <span className="font-comic text-5xl uppercase italic tracking-wider">UPLOAD HERO!</span>
+            <p className="text-lg font-bold uppercase mt-4 opacity-70">SELECT FROM LIBRARY</p>
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -91,25 +91,27 @@ const PhotoStep: React.FC<PhotoStepProps> = ({ onPhotoSelected }) => {
           </button>
         </div>
       ) : (
-        <div className="relative w-full max-w-xl bg-black rounded-3xl overflow-hidden shadow-2xl border border-blue-500/50">
+        <div className="relative w-full max-w-3xl bg-white border-8 border-black shadow-[25px_25px_0px_#660000] overflow-hidden">
           <video 
             ref={videoRef} 
             autoPlay 
             playsInline 
-            className="w-full aspect-[3/4] object-cover"
+            className="w-full aspect-[3/4] object-cover border-b-8 border-black"
           />
-          <div className="absolute bottom-6 left-0 right-0 flex justify-center space-x-6">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 border-8 border-[#e21c23] rounded-full opacity-40 pointer-events-none animate-pulse"></div>
+          
+          <div className="flex justify-center space-x-12 p-10">
             <button 
               onClick={stopCamera}
-              className="p-4 bg-zinc-900/80 rounded-full hover:bg-zinc-800 transition-colors"
+              className="action-btn-red text-2xl !bg-zinc-800"
             >
-              <i className="fa-solid fa-times text-xl"></i>
+              CANCEL
             </button>
             <button 
               onClick={takePhoto}
-              className="p-6 bg-blue-600 rounded-full hover:bg-blue-500 shadow-lg glow-effect transition-transform active:scale-95"
+              className="action-btn-yellow text-4xl transform scale-125 animate-kaboom"
             >
-              <i className="fa-solid fa-camera text-2xl"></i>
+              SNAP!
             </button>
           </div>
         </div>

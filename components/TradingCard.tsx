@@ -14,6 +14,12 @@ interface TradingCardProps {
   exportSide?: 'front' | 'back';
   imageScale?: number;
   imageOffset?: { x: number; y: number };
+  flipH?: boolean;
+  flipV?: boolean;
+  backImageScale?: number;
+  backImageOffset?: { x: number; y: number };
+  backFlipH?: boolean;
+  backFlipV?: boolean;
 }
 
 const TradingCard: React.FC<TradingCardProps> = ({ 
@@ -25,138 +31,192 @@ const TradingCard: React.FC<TradingCardProps> = ({
   category,
   isFlipped,
   onFlip,
-  statusText = "PREMIUM COLLECTOR",
+  statusText = "HEROIC",
   exportSide,
   imageScale = 1,
-  imageOffset = { x: 0, y: 0 }
+  imageOffset = { x: 0, y: 0 },
+  flipH = false,
+  flipV = false,
+  backImageScale = 1,
+  backImageOffset = { x: 0, y: 0 },
+  backFlipH = false,
+  backFlipV = false
 }) => {
-  const logoUrl = "https://i.ibb.co/b43T8dM/1.png";
-  
-  const isExporting = !!exportSide;
-
-  const StatRow = ({ label, value, color }: { label: string; value: number; color: string }) => (
-    <div className="flex items-center space-x-2 h-3.5">
-      <span className="text-[7px] font-black w-20 uppercase italic text-white leading-none truncate tracking-tighter">{label}</span>
-      <div className="flex-grow flex items-center relative h-1 bg-zinc-800 rounded-full overflow-hidden">
-        <div 
-          className="h-full rounded-full transition-all duration-1000 shadow-[0_0_5px_rgba(255,255,255,0.3)]" 
-          style={{ width: `${(value / 7) * 100}%`, backgroundColor: color }}
-        />
-        {!isExporting && (
-          <div 
-            className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full shadow-[0_0_6px_rgba(255,255,255,0.6)]" 
-            style={{ left: `calc(${(value / 7) * 100}% - 3px)`, backgroundColor: color }}
-          ></div>
-        )}
+  const StatBar = ({ label, value, color }: { label: string; value: number; color: string }) => (
+    <div className="flex items-center space-x-4 w-full">
+      <div className="w-24 md:w-32 flex items-center shrink-0">
+        <span className="text-[10px] md:text-[12px] font-black italic uppercase tracking-wider text-zinc-100/90 whitespace-nowrap">
+          {label}
+        </span>
       </div>
-      <span className="text-[7px] font-bold text-white/50 w-2 text-right">{value}</span>
+      <div className="flex-grow h-1.5 md:h-2.5 bg-zinc-800/80 rounded-full relative overflow-hidden">
+        <div 
+          className="absolute inset-y-0 left-0 rounded-full transition-all duration-1000"
+          style={{ 
+            width: `${(value / 7) * 100}%`,
+            backgroundColor: color,
+            boxShadow: `0 0 12px ${color}A0`
+          }}
+        />
+      </div>
+      <div className="w-4 md:w-6 text-right shrink-0">
+        <span className="text-[10px] md:text-[12px] font-bold text-zinc-400">{value}</span>
+      </div>
     </div>
   );
 
   const FrontSideContent = (
-    <div className={`rounded-xl overflow-hidden shadow-2xl border-[5px] border-blue-600 bg-black ${isExporting ? 'relative w-full h-full' : 'absolute inset-0 backface-hidden z-20'}`}>
-      <div className="w-full h-full overflow-hidden relative">
+    <div 
+      className={`absolute inset-0 overflow-hidden shadow-2xl border-[6px] md:border-[12px] border-black bg-white backface-hidden transition-opacity duration-300 ${isFlipped ? 'opacity-0' : 'opacity-100'}`}
+      style={{ 
+        transform: 'rotateY(0deg)',
+        zIndex: isFlipped ? 0 : 20 
+      }}
+    >
+      <div className="w-full h-full overflow-hidden relative bg-zinc-900">
         <img 
           src={frontImage} 
           crossOrigin="anonymous" 
           className="w-full h-full object-cover origin-center" 
           style={{ 
-            transform: `scale(${imageScale}) translate(${imageOffset.x}%, ${imageOffset.y}%)` 
+            transform: `translate(${imageOffset.x}%, ${imageOffset.y}%) scale(${imageScale * (flipH ? -1 : 1)}, ${imageScale * (flipV ? -1 : 1)})` 
           }}
           alt="Card Front" 
         />
       </div>
       
-      <div className="absolute top-0 left-0 right-0 p-5 bg-gradient-to-b from-black/90 via-black/30 to-transparent flex flex-col items-center pointer-events-none">
-         <h3 className="text-xl md:text-2xl lg:text-3xl font-orbitron font-black text-white italic tracking-tighter uppercase drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] line-clamp-2 leading-[1.1] text-center w-full px-4 overflow-visible">
+      <div className="absolute top-0 left-0 right-0 p-4 md:p-10 bg-gradient-to-b from-black via-black/40 to-transparent">
+         <h3 className="text-2xl md:text-5xl font-comic font-black text-[#fde910] italic tracking-tighter uppercase drop-shadow-[2px_2px_0px_#660000] md:drop-shadow-[4px_4px_0px_#660000] leading-[0.85] text-center w-full transform -rotate-2">
            {characterName}
          </h3>
-         <div className="flex items-center space-x-2 mt-1">
-            <div className="h-0.5 w-6 bg-blue-500"></div>
-            <span className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] drop-shadow-sm">{category} UNIVERSE</span>
-         </div>
       </div>
 
-      <div className="absolute bottom-6 right-0 bg-blue-600 text-white font-black text-[10px] px-4 py-1.5 uppercase italic tracking-widest rounded-l-md shadow-xl border-y border-l border-blue-400/50 min-w-[120px] text-center pointer-events-none">
-         {statusText.toUpperCase()}
+      <div className="absolute bottom-4 md:bottom-10 left-0 bg-[#e21c23] text-white font-comic text-lg md:text-2xl px-6 md:px-10 py-1 md:py-3 uppercase italic border-y-4 md:border-y-8 border-r-4 md:border-r-8 border-black shadow-2xl transform rotate-2">
+         {statusText}
       </div>
-
-      <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/10 via-transparent to-white/5 pointer-events-none opacity-40"></div>
     </div>
   );
 
   const BackSideContent = (
-    <div className={`rounded-xl overflow-hidden shadow-2xl border-[5px] border-zinc-800 bg-[#121212] flex flex-col p-3 font-sans ${isExporting ? 'relative w-full h-full transform-none' : 'absolute inset-0 backface-hidden rotate-y-180 z-10'}`}>
-      <div className="flex justify-between items-center mb-3 border-b border-zinc-700 pb-2">
-        <div className="flex flex-col">
-          <h3 className="text-xl font-black italic text-white font-orbitron uppercase leading-none tracking-tighter truncate max-w-[180px]">{characterName}</h3>
-          <span className="text-[8px] font-bold text-blue-500 uppercase tracking-widest mt-1">Classification: Legendary</span>
+    <div 
+      className={`absolute inset-0 overflow-hidden shadow-2xl border-[1px] border-zinc-700/50 bg-[#0d0d0d] flex flex-col backface-hidden transition-opacity duration-300 ${isFlipped ? 'opacity-100' : 'opacity-0'}`}
+      style={{ 
+        transform: 'rotateY(180deg)',
+        zIndex: isFlipped ? 20 : 0
+      }}
+    >
+      {/* High-Tech Grid Overlay */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[radial-gradient(#fff_1px,transparent_1px)] bg-[size:16px_16px]"></div>
+      
+      {/* Header Section */}
+      <div className="px-6 md:px-10 pt-8 md:pt-12 flex justify-between items-start z-10">
+        <div className="space-y-1">
+          <h3 className="text-4xl md:text-6xl font-comic italic uppercase tracking-tighter text-white leading-none">
+            {characterName.split(' ')[0]} {characterName.split(' ').length > 1 ? '...' : ''}
+          </h3>
+          <p className="text-[10px] md:text-[12px] font-black text-[#3b82f6] uppercase tracking-[0.2em] opacity-80">
+            Classification: {category}
+          </p>
         </div>
-        <div className="w-9 h-9 bg-zinc-900 border-2 border-blue-500 rounded-full flex items-center justify-center shadow-lg">
-           <span className="text-blue-500 font-black italic text-lg">01</span>
+        <div className="relative w-12 h-12 md:w-16 md:h-16 bg-zinc-800/30 border border-zinc-700/50 rounded-xl flex items-center justify-center overflow-hidden">
+           <span className="text-zinc-600 font-black text-[12px] md:text-[16px] opacity-40">01</span>
+           <div className="absolute inset-0 border-2 border-white/5 opacity-10"></div>
+           <div className="absolute top-1 left-1 w-2 h-2 border-t border-l border-white/20"></div>
+           <div className="absolute top-1 right-1 w-2 h-2 border-t border-r border-white/20"></div>
+           <div className="absolute bottom-1 left-1 w-2 h-2 border-b border-l border-white/20"></div>
+           <div className="absolute bottom-1 right-1 w-2 h-2 border-b border-r border-white/20"></div>
         </div>
       </div>
 
-      <div className="flex flex-col space-y-3 flex-grow overflow-hidden">
-        {/* Further shrunk height from aspect-[16/10] to aspect-[16/8] to save vertical space */}
-        <div className="relative w-full aspect-[16/8] rounded-lg overflow-hidden border-2 border-zinc-700 bg-black shadow-inner flex-shrink-0">
-          <img src={backImage} crossOrigin="anonymous" className="w-full h-full object-cover object-top" alt="Origin" />
-          <div className="absolute bottom-1.5 left-3 text-[8px] font-black italic text-blue-400 uppercase drop-shadow-md">Cosplay Identity: Confirmed</div>
-        </div>
+      <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent my-6"></div>
 
-        {/* Updated Power Grid with only 4 stats - tightened padding */}
-        <div className="bg-zinc-900/50 p-2.5 rounded-xl border border-zinc-800 space-y-1.5 flex-shrink-0">
-          <div className="flex justify-between items-center mb-0.5">
-            <span className="text-[9px] font-black text-yellow-500 uppercase tracking-[0.2em] italic">Power Grid</span>
-            <div className="flex space-x-1 opacity-40">
-               {[1,2,3,4,5,6,7].map(n => <span key={n} className="text-[7px] font-bold text-white w-2 text-center">{n}</span>)}
-            </div>
+      {/* Profile Image Section */}
+      <div className="px-6 md:px-10 flex flex-col z-10">
+        <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-zinc-700/50 shadow-inner bg-black flex items-center justify-center">
+          <img 
+            src={backImage} 
+            className="w-full h-full object-contain opacity-90 origin-center" 
+            style={{ 
+              transform: `translate(${backImageOffset.x}%, ${backImageOffset.y}%) scale(${backImageScale * (backFlipH ? -1 : 1)}, ${backImageScale * (backFlipV ? -1 : 1)})`
+            }}
+            alt="Original Character Shot" 
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none"></div>
+          <div className="absolute bottom-4 left-6 pointer-events-none">
+             <span className="text-[10px] md:text-[12px] font-black italic text-[#3b82f6] uppercase tracking-widest drop-shadow-md">
+                Cosplay Identity: Confirmed
+             </span>
           </div>
-          <StatRow label="Strength" value={stats.strength} color="#ef4444" />
-          <StatRow label="Intelligence" value={stats.intelligence} color="#3b82f6" />
-          <StatRow label="Agility" value={stats.agility} color="#10b981" />
-          <StatRow label="Speed" value={stats.speed} color="#ec4899" />
         </div>
+      </div>
 
-        <div className="flex-grow p-1 overflow-hidden">
-           <div className="text-[8px] leading-relaxed text-zinc-400 font-medium overflow-hidden line-clamp-2 relative">
-             <span className="text-xl font-black text-blue-500 float-left mr-2 mt-0.5 leading-[0.8] font-orbitron">T</span>
-             {characterDescription}
+      {/* Power Grid Section */}
+      <div className="px-6 md:px-10 mt-8 md:mt-10 space-y-4 z-10 flex-grow">
+        <div className="flex justify-between items-baseline mb-3 border-b border-zinc-800/50 pb-3">
+           <h4 className="text-2xl md:text-3xl font-comic italic text-[#fde910] uppercase tracking-widest">Power Grid</h4>
+           <div className="flex space-x-3 md:space-x-4 text-[8px] md:text-[10px] text-zinc-500 font-bold tracking-widest">
+             {Array.from({length: 7}).map((_, i) => (
+                <span key={i} className="w-3 md:w-4 text-center">{i + 1}</span>
+             ))}
            </div>
         </div>
+        
+        <div className="space-y-4 md:space-y-6 bg-black/40 p-6 rounded-2xl border border-zinc-800/30 backdrop-blur-sm">
+          <StatBar label="Strength" value={stats.strength} color="#ef4444" />
+          <StatBar label="Intelligence" value={stats.intelligence} color="#3b82f6" />
+          <StatBar label="Agility" value={stats.agility} color="#10b981" />
+          <StatBar label="Speed" value={stats.speed} color="#ec4899" />
+        </div>
       </div>
 
-      <div className="mt-2 pt-2 border-t border-zinc-800 flex justify-between items-end flex-shrink-0">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-white/5 rounded-lg p-1 border border-white/10">
-            <img src={logoUrl} crossOrigin="anonymous" className="w-full h-full object-contain" alt="Logo" />
-          </div>
-          <div className="text-[5px] text-zinc-500 leading-tight font-mono uppercase tracking-tighter">
-            ©2024 FOR THE COS ENTERTAINMENT<br/>
-            PROCESSED BY GEMINI-AI NEURAL MAPPING<br/>
-            AUTHENTICITY: VERIFIED [CLASS-S]
-          </div>
+      {/* Description Section */}
+      <div className="px-6 md:px-10 mt-6 md:mt-8 z-10">
+        <div className="flex items-start space-x-4">
+          <span className="text-2xl md:text-3xl font-black text-[#3b82f6] leading-none shrink-0">T</span>
+          <p className="text-[10px] md:text-[12px] text-zinc-400 font-medium leading-relaxed uppercase tracking-tight line-clamp-2 md:line-clamp-3">
+            {characterDescription || "The manifestation of this masterpiece represents a perfect fusion of craftsmanship and character essence. Every detail, from props to pose, has been analyzed and enhanced through our digital shifting matrix."}
+          </p>
+        </div>
+      </div>
+
+      {/* Footer Section */}
+      <div className="mt-auto px-6 md:px-10 pb-10 md:pb-12 flex items-end justify-between z-10">
+        <div className="flex items-center space-x-6">
+           <div className="w-12 h-12 md:w-16 md:h-16 border border-zinc-700/50 p-2 rounded-xl bg-zinc-900/50 backdrop-blur-sm">
+             <img src="https://i.ibb.co/nMbLsyGc/b3d20785-6f2c-4eac-b8a7-6bea68172314.png" className="w-full h-full object-contain opacity-60 grayscale" alt="Logo" />
+           </div>
+           <div className="flex flex-col">
+             <p className="text-[6px] md:text-[7px] text-zinc-600 font-bold uppercase tracking-widest leading-none mb-1">
+               ©2024 FOR THE COS ENTERTAINMENT
+             </p>
+             <p className="text-[6px] md:text-[7px] text-zinc-600 font-medium uppercase tracking-tight leading-none">
+               PROCESSED BY GEMINI-AI NEURAL MAPPING
+             </p>
+             <p className="text-[6px] md:text-[7px] text-zinc-600 font-medium uppercase tracking-tight leading-none">
+               AUTHENTICITY: VERIFIED [CLASS-S]
+             </p>
+           </div>
         </div>
         <div className="text-right">
-          <div className="text-[8px] font-black italic text-white/20 font-orbitron uppercase tracking-tighter">FOR THE COS</div>
+           <span className="text-[12px] md:text-[14px] font-comic italic text-zinc-500 uppercase tracking-widest opacity-80">
+             FOR THE COS
+           </span>
         </div>
       </div>
     </div>
   );
 
-  // If exporting, return the specific side directly without any 3D container logic
-  if (exportSide === 'front') return <div className="w-full h-full relative overflow-hidden bg-black" style={{ aspectRatio: '3/4' }}>{FrontSideContent}</div>;
-  if (exportSide === 'back') return <div className="w-full h-full relative overflow-hidden bg-black" style={{ aspectRatio: '3/4' }}>{BackSideContent}</div>;
-
   return (
     <div 
       className="relative cursor-pointer perspective-1000 group w-full h-full mx-auto" 
-      onClick={(e) => {
-        e.stopPropagation();
-        onFlip();
-      }}
+      onClick={(e) => { e.stopPropagation(); onFlip(); }}
     >
-      <div className={`relative w-full h-full transition-transform duration-700 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
+      <div 
+        className="relative w-full h-full transform-style-3d transition-transform duration-700 ease-in-out"
+        style={{ 
+          transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
+        }}
+      >
         {FrontSideContent}
         {BackSideContent}
       </div>

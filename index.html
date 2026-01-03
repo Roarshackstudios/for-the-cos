@@ -3,49 +3,149 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>For The Cos</title>
+  <title>For The Cos | The Comic Hub</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&family=Bangers&display=swap" rel="stylesheet" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet" crossorigin="anonymous">
   <style>
+    :root {
+      --comic-red: #e21c23;
+      --comic-yellow: #fde910;
+      --comic-white: #ffffff;
+      --comic-black: #000000;
+      --comic-shadow: #660000;
+      --obsidian: #ffffff;
+    }
+
     body {
       font-family: 'Inter', sans-serif;
-      background-color: #0a0a0a;
-      color: #ffffff;
+      background-color: var(--obsidian);
+      color: var(--comic-black);
       margin: 0;
       overflow-x: hidden;
+      /* Refined Halftone Pattern - Dark dots on white */
+      background-image: radial-gradient(rgba(0,0,0,0.05) 2px, transparent 2px);
+      background-size: 24px 24px;
+      background-attachment: fixed;
     }
-    .font-orbitron { font-family: 'Orbitron', sans-serif; }
-    .font-comic { font-family: 'Bangers', cursive; }
-    .custom-scrollbar::-webkit-scrollbar { height: 4px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
+
+    .font-comic { font-family: 'Bangers', cursive; letter-spacing: 0.05em; }
     
-    .perspective-1000 { perspective: 1000px; }
-    .transform-style-3d { transform-style: preserve-3d; }
-    .backface-hidden { backface-visibility: hidden !important; -webkit-backface-visibility: hidden !important; }
-    .rotate-y-180 { transform: rotateY(180deg) !important; }
-    
+    .comic-panel {
+      background: var(--comic-white);
+      color: var(--comic-black);
+      border: 6px solid var(--comic-black);
+      box-shadow: 12px 12px 0px var(--comic-shadow);
+    }
+
+    .comic-text-3d {
+      color: var(--comic-red);
+      text-shadow: 
+        2px 2px 0px var(--comic-shadow),
+        4px 4px 0px var(--comic-shadow),
+        6px 6px 0px rgba(102,0,0,0.3);
+    }
+
+    .comic-text-yellow {
+      color: var(--comic-yellow);
+      text-shadow: 
+        2px 2px 0px var(--comic-shadow),
+        4px 4px 0px var(--comic-shadow);
+    }
+
+    .speech-bubble {
+      position: relative;
+      background: #fff;
+      border: 5px solid #000;
+      border-radius: 40px;
+      padding: 20px;
+      color: #000;
+    }
+    .speech-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -20px;
+      left: 50px;
+      border-width: 20px 20px 0;
+      border-style: solid;
+      border-color: #000 transparent;
+      display: block;
+      width: 0;
+    }
+
+    .action-btn-red {
+      background: var(--comic-red);
+      color: #fff;
+      font-family: 'Bangers', cursive;
+      font-size: 1.5rem;
+      border: 5px solid #000;
+      box-shadow: 6px 6px 0px var(--comic-shadow);
+      transition: all 0.1s;
+      padding: 0.75rem 2.5rem;
+      text-transform: uppercase;
+    }
+    .action-btn-red:hover {
+      transform: translate(-3px, -3px);
+      box-shadow: 9px 9px 0px var(--comic-shadow);
+      background: var(--comic-yellow);
+      color: #000;
+    }
+    .action-btn-red:active {
+      transform: translate(3px, 3px);
+      box-shadow: 0px 0px 0px var(--comic-shadow);
+    }
+
+    .action-btn-yellow {
+      background: var(--comic-yellow);
+      color: #000;
+      font-family: 'Bangers', cursive;
+      font-size: 1.5rem;
+      border: 5px solid #000;
+      box-shadow: 6px 6px 0px var(--comic-shadow);
+      transition: all 0.1s;
+      padding: 0.75rem 2.5rem;
+      text-transform: uppercase;
+    }
+
+    @keyframes kaboom {
+      0% { transform: scale(1) rotate(0deg); }
+      50% { transform: scale(1.1) rotate(2deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    .animate-kaboom { animation: kaboom 0.4s ease-in-out; }
+
     @keyframes heartbeat {
       0% { transform: scale(1); }
-      14% { transform: scale(1.15); }
+      14% { transform: scale(1.1); }
       28% { transform: scale(1); }
-      42% { transform: scale(1.15); }
+      42% { transform: scale(1.2); }
       70% { transform: scale(1); }
     }
-    .animate-heartbeat { animation: heartbeat 1.5s ease-in-out infinite; }
+    .animate-heartbeat { animation: heartbeat 1.2s ease-in-out infinite; }
 
-    @keyframes glow {
-      0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
-      50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.8); }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
     }
-    .glow-effect { animation: glow 3s infinite; }
 
-    @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .animate-spin-slow { animation: spin-slow 8s linear infinite; }
+    .custom-scrollbar::-webkit-scrollbar { width: 12px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: var(--obsidian); }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--comic-red); border: 3px solid var(--comic-black); }
 
-    @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+    /* 3D Flip Utilities */
+    .perspective-1000 {
+      perspective: 1000px;
+    }
+    .transform-style-3d {
+      transform-style: preserve-3d;
+    }
+    .backface-hidden {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+    .rotate-y-180 {
+      transform: rotateY(180deg);
+    }
   </style>
 <script type="importmap">
 {
@@ -68,13 +168,5 @@
 <body>
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
-  <script>
-    window.addEventListener('error', function(event) {
-      console.error('Global Error Detected:', event.message);
-      if (event.message && (event.message.includes('Import map') || event.message.includes('relative module'))) {
-        console.error('Dependency resolution failed. Check the import map in index.html.');
-      }
-    });
-  </script>
 </body>
 </html>

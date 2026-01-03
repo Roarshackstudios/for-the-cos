@@ -1,4 +1,3 @@
-
 export interface Category {
   id: string;
   name: string;
@@ -37,34 +36,18 @@ export interface User {
   email: string;
 }
 
-export interface SocialLinks {
-  instagram?: string;
-  twitter?: string;
-  discord?: string;
-  website?: string;
-}
-
 export interface UserProfile {
   id: string;
   email: string;
   display_name?: string;
   avatar_url?: string;
-  socials?: SocialLinks;
+  socials?: {
+    instagram?: string;
+    twitter?: string;
+    discord?: string;
+    website?: string;
+  };
   created_at?: string;
-}
-
-export interface Comment {
-  id: string;
-  userId: string;
-  generationId: string;
-  content: string;
-  timestamp: number;
-  userProfile?: UserProfile;
-}
-
-export interface Like {
-  userId: string;
-  generationId: string;
 }
 
 export interface CardStats {
@@ -72,6 +55,13 @@ export interface CardStats {
   intelligence: number;
   agility: number;
   speed: number;
+}
+
+export interface ImageTransform {
+  scale: number;
+  offset: { x: number; y: number };
+  flipH: boolean;
+  flipV: boolean;
 }
 
 export interface AdminSettings {
@@ -84,17 +74,6 @@ export interface AdminSettings {
   supabaseUrl?: string;
   supabaseAnonKey?: string;
   n8nWebhookUrl?: string;
-}
-
-export interface ApiLog {
-  id: string;
-  timestamp: number;
-  userSession: string;
-  model: string;
-  category: string;
-  subcategory: string;
-  cost: number;
-  status: string;
 }
 
 export interface PhysicalOrder {
@@ -121,8 +100,12 @@ export interface SavedGeneration {
   description?: string;
   cardStatusText?: string;
   originalSourceImage?: string; 
-  resultScale?: number;
-  resultOffset?: { x: number; y: number };
+  comicTransform?: ImageTransform;
+  cardTransform?: ImageTransform;
+  cardBackTransform?: ImageTransform;
+  titleOffset?: { x: number; y: number };
+  showPriceBadge?: boolean;
+  showBrandLogo?: boolean;
   isPublic?: boolean;
   likeCount?: number;
   userHasLiked?: boolean;
@@ -146,8 +129,13 @@ export interface AppState {
   characterDescription: string;
   cardStatusText: string;
   styleIntensity: number; 
-  resultScale: number;
-  resultOffset: { x: number; y: number };
+  comicTransform: ImageTransform;
+  cardTransform: ImageTransform;
+  cardBackTransform: ImageTransform;
+  titleOffset: { x: number; y: number };
+  showPriceBadge: boolean;
+  showBrandLogo: boolean;
+  isPublic: boolean;
   error: string | null;
   editingId: string | null;
 }

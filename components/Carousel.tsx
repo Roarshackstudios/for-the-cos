@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import { Category, Subcategory } from '../types';
 
@@ -33,39 +32,34 @@ const Carousel: React.FC<CarouselProps> = ({
 
   return (
     <div className="relative w-full overflow-hidden">
-      <div className="flex items-center justify-between mb-8 px-4">
+      <div className="flex flex-col md:flex-row items-center justify-between mb-24 px-16 space-y-10 md:space-y-0">
         {isSubView && (
-          <button 
-            onClick={onBack}
-            className="p-3 bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors"
-          >
-            <i className="fa-solid fa-chevron-left"></i>
-          </button>
+          <button onClick={onBack} className="action-btn-red !text-xl">BACK</button>
         )}
-        <h2 className={`flex-grow text-center text-3xl font-orbitron font-bold tracking-wider ${isSubView ? 'text-purple-400' : 'text-blue-400'}`}>
+        <h2 className={`text-[8rem] md:text-[11rem] font-comic italic uppercase tracking-tighter -rotate-1 ${isSubView ? 'comic-text-yellow' : 'comic-text-3d'}`}>
           {title}
         </h2>
         {isSubView && onConfirm && (
           <button 
             onClick={onConfirm}
-            className={`p-3 rounded-xl transition-all ${selectedIndex !== null ? 'bg-green-600 hover:bg-green-500 scale-110 shadow-lg' : 'bg-zinc-800 opacity-50 cursor-not-allowed'}`}
+            className={`action-btn-yellow scale-125 ${selectedIndex !== null ? 'opacity-100' : 'opacity-20 cursor-not-allowed'}`}
           >
-            <i className="fa-solid fa-check"></i>
+            CONFIRM!
           </button>
         )}
       </div>
 
-      <div className="relative group">
+      <div className="relative group px-10">
         <button 
           onClick={() => scroll('left')}
-          className="absolute left-4 top-1/2 -translate-y-1/2 z-10 p-4 bg-black/50 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute left-4 top-1/2 -translate-y-1/2 z-30 p-8 bg-white border-8 border-black opacity-0 group-hover:opacity-100 transition-all text-black shadow-xl"
         >
-          <i className="fa-solid fa-arrow-left"></i>
+          <i className="fa-solid fa-chevron-left text-5xl"></i>
         </button>
 
         <div 
           ref={scrollRef}
-          className="flex space-x-6 overflow-x-auto pb-8 px-8 custom-scrollbar scroll-smooth snap-x"
+          className="flex space-x-20 overflow-x-auto pb-32 px-16 custom-scrollbar scroll-smooth snap-x"
         >
           {items.map((item, idx) => {
             const isSelected = selectedIndex === idx;
@@ -73,21 +67,22 @@ const Carousel: React.FC<CarouselProps> = ({
               <div 
                 key={item.id}
                 onClick={() => onItemSelect(item)}
-                className={`flex-shrink-0 w-64 md:w-80 cursor-pointer snap-center transition-all duration-300 transform ${isSelected ? 'scale-105 ring-4 ring-blue-500' : 'hover:scale-105 opacity-70 hover:opacity-100'}`}
+                className={`flex-shrink-0 w-80 md:w-[500px] cursor-pointer snap-center transition-all transform ${isSelected ? 'scale-105' : 'opacity-40 hover:opacity-100'}`}
               >
-                <div className="relative h-96 md:h-[30rem] rounded-3xl overflow-hidden shadow-2xl">
+                <div className={`relative h-[55rem] bg-white border-8 border-black shadow-[20px_20px_0px_#660000] transition-all overflow-hidden ${isSelected ? 'scale-105 rotate-1 border-[#e21c23]' : ''}`}>
                   <img 
                     src={item.image} 
                     alt={item.name} 
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover grayscale-[0.3] hover:grayscale-0 transition-all"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent flex flex-col justify-end p-6">
-                    <h3 className="text-2xl font-bold font-orbitron">{item.name}</h3>
-                    <p className="text-gray-300 text-sm line-clamp-2 mt-2">{item.description}</p>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80"></div>
+                  <div className="absolute bottom-0 left-0 right-0 p-12 text-white">
+                    <h3 className="text-6xl md:text-8xl font-comic italic uppercase tracking-tighter drop-shadow-[4px_4px_0px_#660000]">{item.name}</h3>
+                    <p className="text-zinc-300 text-2xl font-comic uppercase mt-4 tracking-widest">{item.description}</p>
                   </div>
                   {isSelected && (
-                    <div className="absolute top-4 right-4 bg-blue-500 p-2 rounded-full shadow-lg">
-                      <i className="fa-solid fa-check text-white"></i>
+                    <div className="absolute top-10 right-10 bg-[#fde910] p-8 border-8 border-black animate-kaboom">
+                      <i className="fa-solid fa-crosshairs text-black text-5xl"></i>
                     </div>
                   )}
                 </div>
@@ -98,9 +93,9 @@ const Carousel: React.FC<CarouselProps> = ({
 
         <button 
           onClick={() => scroll('right')}
-          className="absolute right-4 top-1/2 -translate-y-1/2 z-10 p-4 bg-black/50 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute right-4 top-1/2 -translate-y-1/2 z-30 p-8 bg-white border-8 border-black opacity-0 group-hover:opacity-100 transition-all text-black shadow-xl"
         >
-          <i className="fa-solid fa-arrow-right"></i>
+          <i className="fa-solid fa-chevron-right text-5xl"></i>
         </button>
       </div>
     </div>

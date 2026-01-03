@@ -1,7 +1,7 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { toPng } from 'html-to-image';
-import { AppStep, AppState, Category, Subcategory, CardStats, AdminSettings, SavedGeneration, ApiLog, PhysicalOrder, User, UserProfile, SocialLinks, Comment } from './types';
+import { AppStep, AppState, Category, Subcategory, CardStats, AdminSettings, SavedGeneration, ImageTransform, PhysicalOrder, User, UserProfile } from './types';
 import { CATEGORIES } from './constants';
 import PhotoStep from './components/PhotoStep';
 import Carousel from './components/Carousel';
@@ -16,27 +16,28 @@ import {
   getCurrentUser, 
   signIn, 
   signUp, 
-  signOut, 
   getProfileById, 
-  updateProfile, 
   getPublicGenerations, 
   toggleLike, 
-  getSupabase
+  getSupabase,
+  getAllProfiles,
+  updateGenerationVisibility
 } from './services/db';
 
 const ADMIN_EMAIL_LOWER = "roarshackstudios@gmail.com";
 
 const App: React.FC = () => {
   const previewRef = useRef<HTMLDivElement>(null);
-  const [checkoutSnapshot, setCheckoutSnapshot] = useState<string | null>(null);
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+  const [checkoutSnapshots, setCheckoutSnapshots] = useState<string[]>([]);
+  const [isProcessingOrder, setIsProcessingOrder] = useState(false);
+  const [isPreparingOrder, setIsPreparingOrder] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   
   const [adminSettings, setAdminSettings] = useState<AdminSettings>(() => {
     const saved = localStorage.getItem('cos-admin-settings');
     const defaults = {
       defaultTitle: "THE LEGENDARY",
-      defaultDescription: "The manifestation of this masterpiece represents a perfect fusion of character and dimension.",
+      defaultDescription: "Bring your character to life with cinematic scenery and professional lighting effects.",
       paypalLinkComic: "",
       paypalLinkCard: "",
       priceComicPrint: 14.99,
@@ -50,12 +51,10 @@ const App: React.FC = () => {
 
   const [galleryItems, setGalleryItems] = useState<SavedGeneration[]>([]);
   const [publicFeed, setPublicFeed] = useState<SavedGeneration[]>([]);
+  const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [myProfile, setMyProfile] = useState<UserProfile | null>(null);
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
-  const [isRefreshingFeed, setIsRefreshingFeed] = useState(false);
-  const [isLikingId, setIsLikingId] = useState<string | null>(null);
   
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -64,12 +63,13 @@ const App: React.FC = () => {
   const [selectedArtifact, setSelectedArtifact] = useState<SavedGeneration | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [isVerifyingWithN8n, setIsVerifyingWithN8n] = useState(false);
   const [isPaymentSuccess, setIsPaymentSuccess] = useState(false);
-  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
 
-  const logoUrl = "https://i.ibb.co/b43T8dM/1.png";
+  const brandLogoUrl = "https://i.ibb.co/5g6SRmrF/2c7b3081-ab1b-4d89-b6b5-01abcc0942ef.png";
+  const loaderLogoUrl = "https://i.ibb.co/b43T8dM/1.png";
   const isSupabaseConfigured = getSupabase() !== null;
+
+  const defaultTransform: ImageTransform = { scale: 1, offset: { x: 0, y: 0 }, flipH: false, flipV: false };
 
   const [state, setState] = useState<AppState>({
     step: AppStep.HOME,
@@ -82,50 +82,47 @@ const App: React.FC = () => {
     resultImage: null,
     isComicStyled: false,
     isCardStyled: false,
-    stats: { strength: 5, intelligence: 6, agility: 4, speed: 5 },
+    stats: { strength: 5, intelligence: 6, agility: 5, speed: 5 },
     characterName: '',
     characterDescription: '',
-    cardStatusText: 'PREMIUM COLLECTOR',
+    cardStatusText: 'MASTER CRAFTSMAN',
     styleIntensity: 80, 
-    resultScale: 1,
-    resultOffset: { x: 0, y: 0 },
+    comicTransform: { ...defaultTransform },
+    cardTransform: { ...defaultTransform },
+    cardBackTransform: { ...defaultTransform },
+    titleOffset: { x: 0, y: 0 },
+    showPriceBadge: true,
+    showBrandLogo: true,
+    isPublic: true,
     error: null,
     editingId: null
   });
 
   const [isFlipped, setIsFlipped] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [activeTool, setActiveTool] = useState<'pan' | 'zoom'>('pan');
+  const [activeSliderTool, setActiveSliderTool] = useState<'scale' | 'posX' | 'posY'>('scale');
 
-  const isAdmin = (state.currentUser?.email?.toLowerCase() === ADMIN_EMAIL_LOWER) || !isSupabaseConfigured || (!state.currentUser);
-
-  useEffect(() => {
-    let interval: any;
-    if (isVerifyingWithN8n && pendingOrderId) {
-      const client = getSupabase();
-      if (!client) return;
-
-      interval = setInterval(async () => {
-        const { data, error } = await client
-          .from('orders')
-          .select('status')
-          .eq('id', pendingOrderId)
-          .single();
-        
-        if (!error && data?.status === 'paid') {
-          setIsVerifyingWithN8n(false);
-          setIsPaymentSuccess(true);
-          clearInterval(interval);
-        }
-      }, 4000);
-    }
-    return () => clearInterval(interval);
-  }, [isVerifyingWithN8n, pendingOrderId]);
+  const isAdmin = useMemo(() => (state.currentUser?.email?.toLowerCase() === ADMIN_EMAIL_LOWER) || !isSupabaseConfigured || (!state.currentUser), [state.currentUser, isSupabaseConfigured]);
 
   const loadGallery = async (userId: string) => {
+    if (!isSupabaseConfigured) return;
     try {
-      const items = await getAllGenerations(userId);
-      setGalleryItems(items);
+      const generations = await getAllGenerations(userId);
+      setGalleryItems(generations);
+    } catch (e: any) {
+      console.warn("Gallery load failed:", e.message);
+    }
+  };
+
+  const loadProfiles = async () => {
+    if (!isSupabaseConfigured) return;
+    try {
+      const profiles = await getAllProfiles();
+      setAllProfiles(profiles);
     } catch (e) {
-      console.warn("Gallery sync failed:", e);
+      console.warn("Profiles load failed");
     }
   };
 
@@ -141,6 +138,7 @@ const App: React.FC = () => {
             setMyProfile(profile);
           }
           refreshFeed(user?.id);
+          loadProfiles();
         } catch (e) {
           console.error("Core sync failure:", e);
         }
@@ -151,69 +149,29 @@ const App: React.FC = () => {
 
   const refreshFeed = async (userId?: string) => {
     if (!isSupabaseConfigured) return;
-    setIsRefreshingFeed(true);
     try {
       const currentUserId = userId || state.currentUser?.id;
       const feed = await getPublicGenerations(currentUserId);
       setPublicFeed(feed);
     } catch (e: any) {
       console.warn("Feed update failed:", e.message);
-    } finally {
-      setIsRefreshingFeed(false);
-    }
-  };
-
-  const handleLike = async (e: React.MouseEvent, genId: string) => {
-    e.stopPropagation();
-    if (!state.currentUser) {
-      setState(prev => ({ ...prev, step: AppStep.LOGIN }));
-      return;
-    }
-    
-    // OPTIMISTIC UPDATE: Change state immediately
-    const toggleOptimistically = (current: SavedGeneration[]) => 
-      current.map(item => {
-        if (item.id === genId) {
-          const wasLiked = item.userHasLiked;
-          return {
-            ...item,
-            userHasLiked: !wasLiked,
-            likeCount: (item.likeCount || 0) + (wasLiked ? -1 : 1)
-          };
-        }
-        return item;
-      });
-
-    setPublicFeed(prev => toggleOptimistically(prev));
-    if (selectedArtifact && selectedArtifact.id === genId) {
-      setSelectedArtifact(prev => prev ? ({
-        ...prev,
-        userHasLiked: !prev.userHasLiked,
-        likeCount: (prev.likeCount || 0) + (prev.userHasLiked ? -1 : 1)
-      }) : null);
-    }
-
-    try {
-      await toggleLike(state.currentUser.id, genId);
-      // We don't even NEED to refresh the whole feed because we were optimistic,
-      // but we do it silently to stay in sync with others.
-      const updatedFeed = await getPublicGenerations(state.currentUser.id);
-      setPublicFeed(updatedFeed);
-    } catch (e: any) {
-      console.error("Synergy failure:", e);
-      // Rollback on error
-      refreshFeed();
-      alert(`Synergy Error: ${e.message}. The neural link might be weak.`);
     }
   };
 
   const handleAuth = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!isSupabaseConfigured) { setShowAdmin(true); return; }
+    if (!isSupabaseConfigured) {
+      setState(prev => ({ ...prev, error: "CLOUD CORE OFFLINE! Open Setup Panel to connect Supabase." }));
+      setShowAdmin(true);
+      return; 
+    }
+    if (!authEmail || !authPassword) {
+      setState(prev => ({ ...prev, error: "INPUT IDENTITY DATA FIRST!" }));
+      return;
+    }
     setAuthLoading(true);
     setState(prev => ({ ...prev, error: null }));
     const mode = state.step === AppStep.LOGIN ? 'login' : 'signup';
-    
     try {
       let user: User;
       if (mode === 'login') user = await signIn(authEmail.toLowerCase().trim(), authPassword);
@@ -223,33 +181,22 @@ const App: React.FC = () => {
       const profile = await getProfileById(user.id);
       setMyProfile(profile);
       refreshFeed(user.id);
+      loadProfiles();
     } catch (err: any) {
-      setState(prev => ({ ...prev, error: err.message }));
+      setState(prev => ({ ...prev, error: err.message || "AUTHENTICATION FAILED!" }));
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    setState(prev => ({ ...prev, currentUser: null, step: AppStep.HOME, targetProfile: null }));
-    setMyProfile(null);
-    setGalleryItems([]);
-    refreshFeed();
-  };
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!myProfile) return;
-    setIsUpdatingProfile(true);
-    try {
-      await updateProfile(myProfile);
-      alert("Identity synchronized.");
-    } catch (err: any) {
-      alert(`Sync failure: ${err.message}`);
-    } finally {
-      setIsUpdatingProfile(false);
-    }
+  const handleGuestLogin = () => {
+    const guestUser: User = { id: 'guest-' + Date.now(), email: 'guest@hero.com' };
+    setState(prev => ({ 
+      ...prev, 
+      currentUser: guestUser, 
+      step: AppStep.STUDIO,
+      error: null 
+    }));
   };
 
   const handlePhotoSelected = (base64: string) => {
@@ -259,7 +206,6 @@ const App: React.FC = () => {
   const startProcessing = async () => {
     if (!state.sourceImage || !state.selectedCategory) return;
     setState(prev => ({ ...prev, step: AppStep.PROCESSING, error: null }));
-    
     try {
       const result = await processCosplayImage(
         state.sourceImage,
@@ -268,17 +214,12 @@ const App: React.FC = () => {
         state.styleIntensity,
         state.customPrompt
       );
-      
       setState(prev => ({ 
         ...prev, 
         resultImage: result, 
         step: AppStep.RESULT,
-        stats: { strength: 5, intelligence: 6, agility: 4, speed: 5 },
-        characterName: `${adminSettings.defaultTitle} ${state.selectedSubcategory?.name || 'HERO'}`,
+        characterName: `${state.selectedSubcategory?.name || 'Hero'}`,
         characterDescription: adminSettings.defaultDescription,
-        cardStatusText: 'PREMIUM COLLECTOR',
-        resultScale: 1,
-        resultOffset: { x: 0, y: 0 },
         editingId: null
       }));
     } catch (err: any) {
@@ -286,416 +227,694 @@ const App: React.FC = () => {
     }
   };
 
-  const saveToHistory = async (forcePublic = false): Promise<string | null> => {
+  const saveToHistory = async (forceVisibility?: boolean): Promise<string | null> => {
     if (!state.resultImage || isSaving || !state.currentUser) return null;
+    if (state.currentUser.id.startsWith('guest')) {
+      alert("DEMO MODE: Saving is disabled for guest heroes. Connect Supabase to save!");
+      return null;
+    }
     setIsSaving(true);
     try {
       const newId = state.editingId || crypto.randomUUID();
+      const visibility = forceVisibility !== undefined ? forceVisibility : state.isPublic;
+      // Fix: Line 244 replaced 'gen.category' with 'state.selectedCategory?.name || 'Custom''
       await saveGeneration({
         id: newId,
         userId: state.currentUser.id,
         timestamp: Date.now(),
         image: state.resultImage, 
         name: state.characterName,
-        category: state.selectedCategory?.name || 'Unknown',
+        category: state.selectedCategory?.name || 'Custom',
         type: state.isComicStyled ? 'comic' : (state.isCardStyled ? 'card' : 'raw'),
         stats: state.stats || undefined,
         description: state.characterDescription,
         cardStatusText: state.cardStatusText,
         originalSourceImage: state.sourceImage || undefined,
-        isPublic: forcePublic,
-        resultScale: state.resultScale,
-        resultOffset: state.resultOffset
+        isPublic: visibility,
+        comicTransform: state.comicTransform,
+        cardTransform: state.cardTransform,
+        cardBackTransform: state.cardBackTransform,
+        titleOffset: state.titleOffset,
+        showPriceBadge: state.showPriceBadge,
+        showBrandLogo: state.showBrandLogo
       });
       await loadGallery(state.currentUser.id);
-      if (forcePublic) await refreshFeed();
+      if (visibility) await refreshFeed();
+      alert(state.editingId ? "HERO UPDATED!" : "HERO SAVED TO VAULT!");
       return newId;
     } catch (err: any) {
-      alert(`Synthesis Error: ${err.message}`);
+      alert(`Save failed: ${err.message}`);
       return null;
     } finally {
       setIsSaving(false);
     }
   };
 
-  const captureSnapshot = async () => {
-    if (!previewRef.current) return null;
-    try {
-      await new Promise(r => setTimeout(r, 200));
-      const dataUrl = await toPng(previewRef.current, {
-        quality: 1,
-        pixelRatio: 2,
-        cacheBust: true,
-      });
-      return dataUrl;
-    } catch (e) {
-      console.error("Snapshot capture failed:", e);
-      return null;
-    }
-  };
+  const handleEditHero = (item: SavedGeneration) => {
+    setIsFlipped(false);
+    const oldStats = item.stats as any;
+    const mappedStats: CardStats = {
+      strength: oldStats?.strength || 5,
+      intelligence: oldStats?.intelligence || 5,
+      agility: oldStats?.agility || oldStats?.mental || 5,
+      speed: oldStats?.speed || 5
+    };
 
-  const initiatePayment = async () => {
-    const orderId = crypto.randomUUID();
-    setPendingOrderId(orderId);
-    
-    if (state.currentUser && state.resultImage) {
-      try {
-        await saveOrder({
-          id: orderId,
-          userId: state.currentUser.id,
-          timestamp: Date.now(),
-          paypalOrderId: 'WEB_LINK_PENDING',
-          itemType: state.isComicStyled ? 'comic_print' : 'card_set',
-          itemName: state.characterName,
-          amount: state.isComicStyled ? adminSettings.priceComicPrint : adminSettings.priceCardSet,
-          status: 'pending',
-          previewImage: checkoutSnapshot || state.resultImage
-        });
-
-        const baseLink = state.isComicStyled ? adminSettings.paypalLinkComic : adminSettings.paypalLinkCard;
-        if (!baseLink) {
-          alert("Payment links not configured.");
-          return;
-        }
-
-        const trackingData = encodeURIComponent(`${state.currentUser.id}|${orderId}`);
-        const separator = baseLink.includes('?') ? '&' : '?';
-        const finalLink = `${baseLink}${separator}custom=${trackingData}`;
-        
-        window.open(finalLink, '_blank');
-        setIsVerifyingWithN8n(true);
-      } catch (e) {
-        alert("Verification sequence failed to initiate.");
-      }
-    }
-  };
-
-  const handleEditGeneration = (item: SavedGeneration) => {
-    const categoryObj = CATEGORIES.find(c => c.name === item.category) || CATEGORIES[0];
     setState(prev => ({
       ...prev,
       step: AppStep.RESULT,
-      editingId: item.id,
-      sourceImage: item.originalSourceImage || null,
-      resultImage: item.image, 
-      selectedCategory: categoryObj,
+      resultImage: item.image,
+      sourceImage: item.originalSourceImage || item.image,
       characterName: item.name,
-      characterDescription: item.description || adminSettings.defaultDescription,
-      cardStatusText: item.cardStatusText || 'PREMIUM COLLECTOR',
-      stats: item.stats || { strength: 5, intelligence: 6, agility: 4, speed: 5 },
+      characterDescription: item.description || '',
       isComicStyled: item.type === 'comic',
       isCardStyled: item.type === 'card',
-      resultScale: item.resultScale || 1,
-      resultOffset: item.resultOffset || { x: 0, y: 0 }
+      stats: mappedStats,
+      comicTransform: item.comicTransform || { ...defaultTransform },
+      cardTransform: item.cardTransform || { ...defaultTransform },
+      cardBackTransform: item.cardBackTransform || { ...defaultTransform },
+      titleOffset: item.titleOffset || { x: 0, y: 0 },
+      showPriceBadge: item.showPriceBadge !== undefined ? item.showPriceBadge : true,
+      showBrandLogo: item.showBrandLogo !== undefined ? item.showBrandLogo : true,
+      isPublic: item.isPublic || false,
+      editingId: item.id,
+      selectedCategory: CATEGORIES.find(c => c.name === item.category) || null
     }));
+    setSelectedArtifact(null);
+  };
+
+  const togglePublicStatus = async (item: SavedGeneration) => {
+    const newStatus = !item.isPublic;
+    try {
+      await updateGenerationVisibility(item.id, newStatus);
+      if (state.currentUser) await loadGallery(state.currentUser.id);
+      await refreshFeed();
+      if (selectedArtifact?.id === item.id) {
+        setSelectedArtifact({ ...selectedArtifact, isPublic: newStatus });
+      }
+    } catch (err) {
+      console.error("Failed to update visibility");
+    }
+  };
+
+  const handleDeleteHero = async (id: string) => {
+    if (!window.confirm("PERMANENTLY REMOVE THIS HERO FROM THE VAULT?")) return;
+    try {
+      await deleteGeneration(id);
+      if (state.currentUser) await loadGallery(state.currentUser.id);
+      await refreshFeed();
+      setSelectedArtifact(null);
+    } catch (err: any) {
+      alert("DELETION FAILED: " + err.message);
+    }
+  };
+
+  const handleDownload = async (label: string, forceSide?: 'front' | 'back') => {
+    if (!previewRef.current || isDownloading) return;
+    setIsDownloading(true);
+    
+    const originalFlipped = isFlipped;
+    try {
+      if (forceSide === 'front' && originalFlipped) {
+        setIsFlipped(false);
+        await new Promise(r => setTimeout(r, 400));
+      } else if (forceSide === 'back' && !originalFlipped) {
+        setIsFlipped(true);
+        await new Promise(r => setTimeout(r, 400));
+      }
+
+      const dataUrl = await toPng(previewRef.current, { cacheBust: true, pixelRatio: 2 });
+      const link = document.createElement('a');
+      const namePart = (state.characterName || selectedArtifact?.name || 'hero').replace(/\s+/g, '-').toLowerCase();
+      link.download = `${namePart}-${label}-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("Download error:", err);
+      alert("Failed to generate digital file.");
+    } finally {
+      if (forceSide && isFlipped !== originalFlipped) {
+        setIsFlipped(originalFlipped);
+      }
+      setIsDownloading(false);
+    }
+  };
+
+  const handlePhysicalOrderStart = async () => {
+    if (!previewRef.current) return;
+    setIsPreparingOrder(true);
+    try {
+      const snapshots: string[] = [];
+
+      if (state.isCardStyled) {
+        setIsFlipped(false);
+        await new Promise(r => setTimeout(r, 800));
+        const front = await toPng(previewRef.current, { cacheBust: true });
+        snapshots.push(front);
+
+        setIsFlipped(true);
+        await new Promise(r => setTimeout(r, 800));
+        const back = await toPng(previewRef.current, { cacheBust: true });
+        snapshots.push(back);
+      } else {
+        await new Promise(r => setTimeout(r, 300));
+        const single = await toPng(previewRef.current, { cacheBust: true });
+        snapshots.push(single);
+      }
+
+      setCheckoutSnapshots(snapshots);
+      setState(prev => ({ ...prev, step: AppStep.CHECKOUT }));
+      setSelectedArtifact(null);
+    } catch (err) {
+      console.error("Snapshot failed:", err);
+      alert("Failed to prepare your order.");
+    } finally {
+      setIsPreparingOrder(false);
+    }
+  };
+
+  const handleConfirmPurchase = async () => {
+    if (!state.currentUser || checkoutSnapshots.length === 0) return;
+    setIsProcessingOrder(true);
+    try {
+      const orderId = crypto.randomUUID();
+      const itemType = state.isCardStyled ? 'TRADING CARD SET' : 'COMIC PRINT';
+      const amount = state.isCardStyled ? adminSettings.priceCardSet : adminSettings.priceComicPrint;
+      
+      await saveOrder({
+        id: orderId,
+        userId: state.currentUser.id,
+        timestamp: Date.now(),
+        paypalOrderId: 'MOCK-' + Date.now(),
+        itemType: itemType,
+        itemName: state.characterName,
+        amount: amount,
+        status: 'PAID',
+        previewImage: checkoutSnapshots[0]
+      });
+      
+      setIsPaymentSuccess(true);
+    } catch (err: any) {
+      alert("Order process failed: " + err.message);
+    } finally {
+      setIsProcessingOrder(false);
+    }
   };
 
   const goBack = () => {
+    setIsFlipped(false);
     if (state.step === AppStep.CATEGORY_SELECT) setState(prev => ({ ...prev, step: AppStep.STUDIO }));
     else if (state.step === AppStep.SUBCATEGORY_SELECT) setState(prev => ({ ...prev, step: AppStep.CATEGORY_SELECT }));
     else if (state.step === AppStep.RESULT) setState(prev => ({ ...prev, step: AppStep.SUBCATEGORY_SELECT }));
     else if (state.step === AppStep.CHECKOUT) setState(prev => ({ ...prev, step: AppStep.RESULT }));
-    else if ([AppStep.GALLERY, AppStep.PROFILE, AppStep.VIEW_PROFILE, AppStep.COMMUNITY].includes(state.step)) 
-      setState(prev => ({ ...prev, step: prev.currentUser ? AppStep.STUDIO : AppStep.HOME }));
+  };
+
+  const handleLike = async (e: React.MouseEvent, generationId: string) => {
+    e.stopPropagation();
+    if (!state.currentUser || !isSupabaseConfigured) {
+      setState(prev => ({ ...prev, error: "LOG IN TO LIKE HEROES!" }));
+      if (!state.currentUser) setState(prev => ({ ...prev, step: AppStep.LOGIN }));
+      return;
+    }
+    try {
+      const liked = await toggleLike(state.currentUser.id, generationId);
+      const updateList = (list: SavedGeneration[]) => list.map(item => {
+        if (item.id === generationId) {
+          return {
+            ...item,
+            userHasLiked: liked,
+            likeCount: (item.likeCount || 0) + (liked ? 1 : -1)
+          };
+        }
+        return item;
+      });
+      setPublicFeed(prev => updateList(prev));
+      setGalleryItems(prev => updateList(prev));
+      if (selectedArtifact && selectedArtifact.id === generationId) {
+        setSelectedArtifact(prev => prev ? {
+          ...prev,
+          userHasLiked: liked,
+          likeCount: (prev.likeCount || 0) + (liked ? 1 : -1)
+        } : null);
+      }
+    } catch (err: any) {
+      console.error("Like toggle failed:", err);
+    }
+  };
+
+  const activeTransform = useMemo(() => {
+    if (state.isCardStyled) {
+      return isFlipped ? state.cardBackTransform : state.cardTransform;
+    }
+    return state.comicTransform;
+  }, [state.isCardStyled, isFlipped, state.cardTransform, state.cardBackTransform, state.comicTransform]);
+
+  const updateActiveTransform = (updates: Partial<ImageTransform>) => {
+    const key = state.isCardStyled 
+      ? (isFlipped ? 'cardBackTransform' : 'cardTransform') 
+      : 'comicTransform';
+      
+    setState(p => ({
+        ...p,
+        [key]: { ...p[key], ...updates }
+    }));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (state.step !== AppStep.RESULT || e.button !== 0) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    
+    if (activeTool === 'pan') {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const percentX = (dx / rect.width) * 100;
+      const percentY = (dy / rect.height) * 100;
+      updateActiveTransform({
+        offset: {
+          x: activeTransform.offset.x + percentX,
+          y: activeTransform.offset.y + percentY
+        }
+      });
+    } else if (activeTool === 'zoom') {
+      const zoomFactor = -dy * 0.01;
+      const newScale = Math.min(Math.max(0.1, activeTransform.scale + zoomFactor), 10);
+      updateActiveTransform({ scale: newScale });
+    }
+    setDragStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  };
+
+  const resetTransform = () => {
+    updateActiveTransform({ scale: 1, offset: { x: 0, y: 0 }, flipH: false, flipV: false });
   };
 
   const renderArtifactCard = (item: SavedGeneration) => (
-    <div key={item.id} className="bg-zinc-900/40 rounded-[2rem] border border-zinc-800 overflow-hidden group hover:border-blue-500/50 transition-all hover:shadow-[0_0_40px_rgba(59,130,246,0.1)] relative flex flex-col">
-      <div className="aspect-[3/4] relative bg-black overflow-hidden cursor-pointer" onClick={() => { setSelectedArtifact(item); }}>
-        <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={item.name} />
-        <div className="absolute top-4 left-4 flex space-x-2">
-          <span className={`px-3 py-1 rounded text-[8px] font-black uppercase tracking-widest border shadow-xl ${item.type === 'comic' ? 'bg-yellow-500 text-black border-yellow-300' : (item.type === 'card' ? 'bg-blue-600 text-white border-blue-400' : 'bg-zinc-800 text-zinc-400 border-zinc-700')}`}>
+    <div key={item.id} className="bg-white p-2 border-4 border-black shadow-[10px_10px_0px_#660000] group hover:-translate-y-2 transition-all duration-200">
+      <div className="aspect-[3/4] relative bg-black overflow-hidden cursor-pointer" onClick={() => { setIsFlipped(false); setSelectedArtifact(item); }}>
+        <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt={item.name} />
+        <div className="absolute top-3 left-3 flex flex-col gap-2">
+          <span className={`px-4 py-1 font-comic text-xl uppercase border-4 border-black shadow-lg ${item.type === 'comic' ? 'bg-[#e21c23] text-white' : (item.type === 'card' ? 'bg-[#fde910] text-black' : 'bg-black text-white')}`}>
             {item.type}
           </span>
+          {state.currentUser?.id === item.userId && (
+            <span className={`px-4 py-1 font-comic text-xs uppercase border-4 border-black shadow-lg ${item.isPublic ? 'bg-green-500 text-white' : 'bg-zinc-500 text-white'}`}>
+              {item.isPublic ? 'HEROIC (PUBLIC)' : 'SNEAKY (PRIVATE)'}
+            </span>
+          )}
         </div>
-        <button 
-          onClick={(e) => handleLike(e, item.id)} 
-          className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:border-blue-500/50 transition-all active:scale-90"
-        >
-          <i className={`fa-solid fa-bolt ${item.userHasLiked ? 'text-blue-500' : 'text-zinc-500'} text-xs`}></i>
-          {item.likeCount && item.likeCount > 0 ? <span className="text-[8px] font-bold ml-1.5 text-white/50">{item.likeCount}</span> : null}
-        </button>
       </div>
-      <div className="p-5 bg-zinc-950/80 backdrop-blur-md flex flex-col space-y-3">
-        <h4 className="font-orbitron font-bold text-sm uppercase truncate text-white tracking-tight">{item.name}</h4>
-        <button onClick={() => item.userProfile && setState(prev => ({ ...prev, targetProfile: item.userProfile!, step: AppStep.VIEW_PROFILE }))} className="text-[9px] text-zinc-500 font-black uppercase mt-1 tracking-widest hover:text-blue-400 transition-colors flex items-center">
-          <div className="w-4 h-4 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden mr-1.5">
-            {item.userProfile?.avatar_url ? <img src={item.userProfile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[6px] font-bold">{item.userProfile?.display_name?.[0] || 'P'}</div>}
-          </div>
-          {item.userProfile?.display_name || 'PILOT'}
-        </button>
+      <div className="p-4 flex flex-col space-y-2 bg-white text-black">
+        <h4 className="font-comic text-3xl uppercase truncate tracking-tight leading-none italic">{item.name}</h4>
+        <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">By {item.userProfile?.display_name || 'Hero'}</span>
+            <button onClick={(e) => handleLike(e, item.id)} className="text-[#e21c23] hover:scale-125 transition-transform">
+                <i className={`fa-solid fa-heart ${item.userHasLiked ? 'text-[#e21c23]' : 'text-zinc-300'}`}></i> {item.likeCount || 0}
+            </button>
+        </div>
       </div>
     </div>
   );
 
-  const nexusSchemaFix = `-- NEXUS REPAIR SCRIPT (v6 - OPTIMIZED) --
--- Use this to fix Synergy/Like 406 errors --
-
--- 1. CLEAN RESET
-DROP TABLE IF EXISTS public.likes CASCADE;
-
--- 2. REBUILD SYNERGY TABLE
-CREATE TABLE public.likes (
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  generation_id UUID REFERENCES public.generations(id) ON DELETE CASCADE,
-  PRIMARY KEY (user_id, generation_id)
-);
-
--- 3. PERMISSIONS
-ALTER TABLE public.likes ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public Synergy Access" ON public.likes FOR ALL USING (true) WITH CHECK (true);
-
--- 4. ENSURE PROFILES EXIST & ARE SYNCED
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Profile Access" ON public.profiles;
-CREATE POLICY "Public Profile Access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
-
--- 5. CACHE RESET
-NOTIFY pgrst, 'reload schema';
-
--- 6. Done
-SELECT 'Synergy Restored' as Status;`;
+  const renderCreatorBadge = (profile: UserProfile) => (
+    <div key={profile.id} className="flex flex-col items-center space-y-4 group cursor-pointer" onClick={() => {}}>
+      <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-8 border-black overflow-hidden shadow-[8px_8px_0px_#660000] group-hover:-translate-y-2 transition-transform">
+        {profile.avatar_url ? (
+          <img src={profile.avatar_url} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-[#fde910] flex items-center justify-center text-4xl font-black">
+            {profile.display_name?.[0] || profile.email[0].toUpperCase()}
+          </div>
+        )}
+      </div>
+      <span className="font-comic text-2xl uppercase tracking-tighter truncate w-32 text-center drop-shadow-sm">{profile.display_name || profile.email.split('@')[0]}</span>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col font-inter">
-      <header className="px-6 py-4 flex justify-between items-center border-b border-zinc-900 bg-black/80 backdrop-blur-xl sticky top-0 z-[100]">
-        <div className="flex items-center cursor-pointer" onClick={() => setState(prev => ({ ...prev, step: AppStep.HOME }))}>
-          <img src={logoUrl} className="w-12 h-12 object-contain" alt="Logo" />
-          <h1 className="text-xl font-orbitron font-bold tracking-tighter uppercase ml-3">FOR THE <span className="text-blue-500">COS</span></h1>
+    <div className="min-h-screen flex flex-col">
+      {isPreparingOrder && (
+        <div className="fixed inset-0 z-[1000] bg-black/90 flex flex-col items-center justify-center animate-fade-in backdrop-blur-sm">
+          <div className="relative group">
+            <div className="absolute inset-0 bg-white opacity-20 blur-3xl rounded-full scale-150 group-hover:scale-175 transition-transform duration-1000 animate-pulse"></div>
+            <img src={loaderLogoUrl} className="w-48 h-48 md:w-64 md:h-64 object-contain animate-heartbeat relative z-10" alt="Preparing..." />
+          </div>
+          <div className="mt-16 text-center">
+            <h2 className="text-6xl md:text-8xl font-comic comic-text-yellow animate-bounce">DEVELOPING ARTIFACT!</h2>
+            <p className="text-white font-black text-2xl md:text-3xl uppercase tracking-widest italic opacity-80">STAY ALERT, HERO...</p>
+          </div>
         </div>
-        <div className="flex items-center space-x-6">
-          <button onClick={() => setState(prev => ({ ...prev, step: AppStep.COMMUNITY }))} className={`text-[10px] font-black uppercase tracking-widest transition-colors ${state.step === AppStep.COMMUNITY ? 'text-blue-500' : 'text-zinc-400 hover:text-white'}`}>Nexus</button>
+      )}
+
+      <header className="fixed top-0 left-0 right-0 z-[100] flex justify-between items-center px-10 py-6 bg-white border-b-8 border-black shadow-xl">
+        <div className="flex items-center cursor-pointer" onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.HOME })); }}>
+          <img src={brandLogoUrl} className="h-14 object-contain" alt="Brand Logo" />
+        </div>
+        <div className="flex items-center space-x-10">
+          <button onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.COMMUNITY })); }} className={`text-2xl font-comic uppercase tracking-wider transition-all ${state.step === AppStep.COMMUNITY ? 'text-[#e21c23] scale-110' : 'text-black hover:text-[#e21c23]'}`}>Feed</button>
           {state.currentUser ? (
             <>
-              <button onClick={() => setState(prev => ({ ...prev, step: AppStep.STUDIO }))} className={`text-[10px] font-black uppercase tracking-widest transition-colors ${state.step === AppStep.STUDIO ? 'text-blue-500' : 'text-zinc-400 hover:text-white'}`}>Studio</button>
-              <button onClick={() => setState(prev => ({ ...prev, step: AppStep.GALLERY }))} className={`text-[10px] font-black uppercase tracking-widest transition-colors ${state.step === AppStep.GALLERY ? 'text-blue-500' : 'text-zinc-400 hover:text-white'}`}>Vault</button>
-              <button onClick={() => setState(prev => ({ ...prev, step: AppStep.PROFILE }))} className="w-8 h-8 rounded-full border border-blue-500/50 overflow-hidden bg-zinc-900">
-                {myProfile?.avatar_url ? <img src={myProfile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs font-bold">{myProfile?.display_name?.[0] || '?'}</div>}
-              </button>
+              <button onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.STUDIO })); }} className={`text-2xl font-comic uppercase tracking-wider transition-all ${state.step === AppStep.STUDIO ? 'text-[#e21c23] scale-110' : 'text-black hover:text-[#e21c23]'}`}>Create</button>
+              <button onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.GALLERY })); }} className={`text-2xl font-comic uppercase tracking-wider transition-all ${state.step === AppStep.GALLERY ? 'text-[#e21c23] scale-110' : 'text-black hover:text-[#e21c23]'}`}>Gallery</button>
+              <div className="w-12 h-12 bg-black border-4 border-black rounded-full overflow-hidden">
+                {myProfile?.avatar_url ? <img src={myProfile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-white font-black">{state.currentUser.id.startsWith('guest') ? 'G' : '?'}</div>}
+              </div>
             </>
           ) : (
-            <button onClick={() => setState(prev => ({ ...prev, step: AppStep.LOGIN }))} className="text-[10px] font-black uppercase tracking-widest text-blue-500 border border-blue-500/30 px-4 py-2 rounded-full hover:bg-blue-500/10 transition-all">Login/Signup</button>
+            <button onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.LOGIN })); }} className="action-btn-red text-sm">Join / Login</button>
           )}
-          {isAdmin && <button onClick={() => setShowAdmin(!showAdmin)} className={`transition-colors ${!isSupabaseConfigured ? 'text-red-500 animate-pulse' : 'text-zinc-600 hover:text-white'}`}><i className="fa-solid fa-gear"></i></button>}
         </div>
       </header>
 
-      <main className="flex-grow flex flex-col">
+      <main className="flex-grow flex flex-col pt-32 bg-white">
         {state.step === AppStep.HOME && (
           <div className="flex flex-col animate-fade-in">
-             <section className="relative h-[85vh] flex items-center justify-center overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-b from-blue-600/10 via-transparent to-black z-10"></div>
-                <div className="relative z-20 text-center space-y-10 p-6">
-                  <div className="inline-block px-6 py-2 bg-blue-600/10 border border-blue-500/30 rounded-full mb-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.6em] text-blue-400">Biological Reality Enhancer v3.1</p>
+             <section className="relative min-h-[90vh] flex flex-col items-center justify-center text-center px-6 overflow-hidden">
+                <div className="relative space-y-16">
+                  <div className="speech-bubble inline-block animate-kaboom">
+                    <p className="text-3xl font-comic uppercase tracking-widest text-[#e21c23]">SUPERCHARGE YOUR CHARACTER!</p>
                   </div>
-                  <h2 className="text-7xl md:text-9xl font-orbitron font-black text-white italic uppercase tracking-tighter leading-none">NEURAL<br/><span className="text-blue-500">TRANSFORM</span></h2>
-                  <p className="text-zinc-400 max-w-2xl mx-auto uppercase text-xs font-bold tracking-[0.3em] leading-relaxed">Dimension-shifting for cosplayers. Manifest themed realities.</p>
-                  <div className="flex flex-wrap justify-center gap-6 pt-6">
-                    <button onClick={() => isSupabaseConfigured ? setState(prev => ({ ...prev, step: state.currentUser ? AppStep.STUDIO : AppStep.LOGIN })) : setShowAdmin(true)} className="px-12 py-6 bg-white text-black font-black uppercase tracking-widest rounded-2xl hover:bg-blue-500 hover:text-white transition-all shadow-2xl active:scale-95">Initiate Studio</button>
-                    <button onClick={() => setState(prev => ({ ...prev, step: AppStep.COMMUNITY }))} className="px-12 py-6 bg-zinc-900 border border-zinc-800 text-white font-black uppercase tracking-widest rounded-2xl hover:bg-zinc-800 transition-all active:scale-95">Explore Nexus</button>
+                  <h2 className="text-[12rem] md:text-[18rem] font-comic italic uppercase tracking-tighter leading-[0.75] select-none -skew-x-12">
+                    <span className="comic-text-3xl block text-black">FOR THE</span>
+                    <span className="comic-text-3d block transform scale-110">COSPLAY</span>
+                  </h2>
+                  <div className="flex flex-wrap justify-center gap-12 pt-16">
+                    <button onClick={() => setState(prev => ({ ...prev, step: state.currentUser ? AppStep.STUDIO : AppStep.LOGIN }))} className="action-btn-red px-28 py-8 text-4xl">START THE ACTION!</button>
+                    <button onClick={() => setState(prev => ({ ...prev, step: AppStep.COMMUNITY }))} className="action-btn-yellow px-24 py-8 text-4xl">VIEW GALLERY</button>
                   </div>
                 </div>
              </section>
-             <section className="p-8 md:p-20 space-y-16">
-                <div className="flex justify-between items-center border-b border-zinc-900 pb-8">
-                  <h3 className="text-4xl font-orbitron font-black text-white italic uppercase tracking-tighter">LATEST MANIFESTATIONS</h3>
-                  <button onClick={() => refreshFeed()} className="text-xs text-blue-500 font-bold uppercase tracking-widest hover:text-white transition-colors">
-                    {isRefreshingFeed ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-rotate-right"></i>} Refresh
-                  </button>
+             <section className="p-16 md:p-32 bg-[#f4f4f4] border-t-8 border-black">
+                <h3 className="text-7xl font-comic italic uppercase mb-16 comic-text-3d">FEATURED <span className="text-black">CREATORS</span></h3>
+                <div className="flex space-x-16 overflow-x-auto pb-10 custom-scrollbar">
+                  {allProfiles.length > 0 ? allProfiles.map(renderCreatorBadge) : <div className="text-zinc-300 font-comic text-4xl">Enlisting heroes...</div>}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
-                  {publicFeed.length > 0 ? publicFeed.slice(0, 8).map(renderArtifactCard) : <div className="col-span-full py-20 text-center text-zinc-700 font-bold uppercase tracking-widest">No artifacts detected in Nexus</div>}
+             </section>
+             <section className="p-16 md:p-32 space-y-24 bg-white border-t-8 border-black">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-16">
+                  {publicFeed.length > 0 ? publicFeed.slice(0, 8).map(renderArtifactCard) : <div className="col-span-full py-40 text-center text-black/10 font-comic text-7xl italic">Empty panels...</div>}
                 </div>
              </section>
           </div>
         )}
 
+        {state.step === AppStep.STUDIO && <div className="animate-fade-in flex flex-col items-center justify-center py-40 px-6">
+          <div className="text-center space-y-10 transform -rotate-1 mb-24">
+            <h2 className="text-[14rem] font-comic text-black italic uppercase tracking-tighter leading-none comic-text-3d">THE <br/><span className="text-[#fde910]">STUDIO</span></h2>
+          </div>
+          <div className="w-full max-w-6xl"><PhotoStep onPhotoSelected={handlePhotoSelected} /></div>
+        </div>}
+
         {state.step === AppStep.RESULT && (
-          <div className="flex-grow grid grid-cols-1 lg:grid-cols-12 h-full animate-fade-in">
-            <div className="lg:col-span-7 bg-zinc-950 flex flex-col items-center justify-center p-12 relative overflow-hidden">
-               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.05)_0%,_transparent_70%)]"></div>
-               <div ref={previewRef} className="w-full max-w-md aspect-[3/4] relative shadow-[0_0_100px_rgba(0,0,0,0.5)] bg-black group/preview">
-                  {state.isCardStyled ? (
-                    <TradingCard 
-                      frontImage={state.resultImage!} 
-                      backImage={state.sourceImage!} 
-                      stats={state.stats!} 
-                      characterName={state.characterName} 
-                      characterDescription={state.characterDescription} 
-                      category={state.selectedCategory?.name || 'GENERIC'} 
-                      isFlipped={isFlipped}
-                      onFlip={() => setIsFlipped(!isFlipped)}
-                      statusText={state.cardStatusText}
-                      imageScale={state.resultScale}
-                      imageOffset={state.resultOffset}
-                    />
-                  ) : (
-                    <div className="w-full h-full relative overflow-hidden bg-black border-4 border-zinc-900 rounded-3xl">
-                       <img src={state.resultImage!} className="w-full h-full object-cover" style={{ transform: `scale(${state.resultScale}) translate(${state.resultOffset.x}%, ${state.resultOffset.y}%)` }} />
-                       {state.isComicStyled && <ComicFrame category={state.selectedCategory?.name || 'LEGEND'} subcategory={state.selectedSubcategory?.name || 'HERO'} customTitle={state.characterName} />}
+          <div className="grid grid-cols-1 lg:grid-cols-12 animate-fade-in bg-zinc-100 min-h-[calc(100vh-8rem)]">
+            <div className="lg:col-span-9 bg-zinc-100 flex flex-col border-r-8 border-black">
+               {/* Style Switcher */}
+               <div className="bg-black p-2 flex space-x-3 border-b-4 border-black">
+                  {['raw', 'comic', 'card'].map(type => (
+                    <button key={type} onClick={() => { setIsFlipped(false); setState(p => ({ ...p, isComicStyled: type==='comic', isCardStyled: type==='card' })); }} className={`flex-grow py-3 text-xl font-comic uppercase transition-all ${((type==='comic' && state.isComicStyled) || (type==='card' && state.isCardStyled) || (type==='raw' && !state.isComicStyled && !state.isCardStyled)) ? 'bg-[#fde910] text-black' : 'text-zinc-600 hover:text-white'}`}>{type}</button>
+                  ))}
+               </div>
+
+               {/* Redesigned Pro Toolbar */}
+               <div className="bg-black text-white px-6 py-4 flex flex-col gap-4 border-b-4 border-black sticky top-0 z-50">
+                  <div className="flex items-center justify-between w-full flex-wrap gap-4">
+                    <div className="flex items-center gap-6">
+                      {/* General Tools */}
+                      <div className="flex items-center gap-2 border-r border-zinc-700 pr-6 shrink-0">
+                        <button onClick={() => setActiveTool('pan')} className={`p-3 rounded transition-colors ${activeTool === 'pan' ? 'bg-[#fde910] text-black' : 'text-zinc-400 hover:text-white'}`} title="Pan Tool"><i className="fa-solid fa-arrows-up-down-left-right text-xl"></i></button>
+                        <button onClick={() => setActiveTool('zoom')} className={`p-3 rounded transition-colors ${activeTool === 'zoom' ? 'bg-[#fde910] text-black' : 'text-zinc-400 hover:text-white'}`} title="Zoom Tool"><i className="fa-solid fa-magnifying-glass-plus text-xl"></i></button>
+                        <button onClick={resetTransform} className="p-3 text-zinc-400 hover:text-white transition-colors" title="Reset View"><i className="fa-solid fa-rotate-left text-xl"></i></button>
+                      </div>
+
+                      {/* Tool Selectors (Provided Icons) - Clustered together, no borders/shadows */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-center">
+                          <button onClick={() => setActiveSliderTool('scale')} className={`w-14 h-14 p-1 transition-all flex items-center justify-center border-0 ${activeSliderTool === 'scale' ? 'bg-[#fde910] scale-110' : 'opacity-60 hover:opacity-100'}`}>
+                            <img src="https://i.ibb.co/nMRXHpr3/scale.png" className="w-full h-full object-contain" alt="Scale Tool" />
+                          </button>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <button onClick={() => setActiveSliderTool('posX')} className={`w-14 h-14 p-1 transition-all flex items-center justify-center border-0 ${activeSliderTool === 'posX' ? 'bg-[#fde910] scale-110' : 'opacity-60 hover:opacity-100'}`}>
+                            <img src="https://i.ibb.co/N6600kXX/Asset-3.png" className="w-full h-full object-contain" alt="Move X Tool" />
+                          </button>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <button onClick={() => setActiveSliderTool('posY')} className={`w-14 h-14 p-1 transition-all flex items-center justify-center border-0 ${activeSliderTool === 'posY' ? 'bg-[#fde910] scale-110' : 'opacity-60 hover:opacity-100'}`}>
+                            <img src="https://i.ibb.co/xt78wwTL/vert.png" className="w-full h-full object-contain" alt="Move Y Tool" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  <button onClick={() => setIsZoomed(true)} className="absolute top-4 right-4 z-50 p-4 bg-black/60 backdrop-blur-md rounded-2xl border border-white/10 text-white opacity-0 group-hover/preview:opacity-100 transition-all active:scale-90"><i className="fa-solid fa-expand text-lg"></i></button>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-3 border-l border-zinc-700 pl-6">
+                      <button onClick={() => updateActiveTransform({ flipH: !activeTransform.flipH })} className={`px-4 py-2 text-[10px] font-black uppercase border-2 transition-colors ${activeTransform.flipH ? 'bg-white text-black border-white' : 'border-zinc-800 text-zinc-400 hover:text-white'}`}>FLIP H</button>
+                      <button onClick={() => updateActiveTransform({ flipV: !activeTransform.flipV })} className={`px-4 py-2 text-[10px] font-black uppercase border-2 transition-colors ${activeTransform.flipV ? 'bg-white text-black border-white' : 'border-zinc-800 text-zinc-400 hover:text-white'}`}>FLIP V</button>
+                      <button onClick={resetTransform} className="px-4 py-2 text-[10px] font-black uppercase text-red-500 border-2 border-red-500/20 hover:bg-red-500 hover:text-white transition-all">CLEAR ALL</button>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Slider Section */}
+                  <div className="bg-zinc-900/80 p-3 border border-zinc-800 min-h-[50px] flex items-center">
+                    {activeSliderTool === 'scale' && (
+                      <div className="flex items-center gap-6 w-full animate-fade-in">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 w-24">SCALE</span>
+                        <input type="range" min="0.1" max="10" step="0.01" value={activeTransform.scale} onChange={e => updateActiveTransform({ scale: parseFloat(e.target.value) })} className="flex-grow h-1.5 bg-zinc-800 rounded-none appearance-none accent-[#fde910]" />
+                        <span className="text-[10px] font-mono text-zinc-400 w-12 text-right">{activeTransform.scale.toFixed(1)}x</span>
+                      </div>
+                    )}
+                    {activeSliderTool === 'posX' && (
+                      <div className="flex items-center gap-6 w-full animate-fade-in">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 w-24">POS X</span>
+                        <input type="range" min="-200" max="200" step="0.5" value={activeTransform.offset.x} onChange={e => updateActiveTransform({ offset: { ...activeTransform.offset, x: parseFloat(e.target.value) } })} className="flex-grow h-1.5 bg-zinc-800 rounded-none appearance-none accent-[#fde910]" />
+                        <span className="text-[10px] font-mono text-zinc-400 w-12 text-right">{Math.round(activeTransform.offset.x)}%</span>
+                      </div>
+                    )}
+                    {activeSliderTool === 'posY' && (
+                      <div className="flex items-center gap-6 w-full animate-fade-in">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 w-24">POS Y</span>
+                        <input type="range" min="-200" max="200" step="0.5" value={activeTransform.offset.y} onChange={e => updateActiveTransform({ offset: { ...activeTransform.offset, y: parseFloat(e.target.value) } })} className="flex-grow h-1.5 bg-zinc-800 rounded-none appearance-none accent-[#fde910]" />
+                        <span className="text-[10px] font-mono text-zinc-400 w-12 text-right">{Math.round(activeTransform.offset.y)}%</span>
+                      </div>
+                    )}
+                  </div>
+               </div>
+
+               {state.isCardStyled && (
+                 <div className="flex justify-center pt-8 px-6">
+                    <button onClick={() => setIsFlipped(!isFlipped)} className="w-full max-w-3xl py-4 font-comic text-2xl uppercase border-4 border-black bg-zinc-900 text-[#fde910] shadow-[8px_8px_0px_#660000] active:translate-y-1 active:shadow-none transition-all">
+                        {isFlipped ? 'VIEW FRONT' : 'VIEW BACK'}
+                    </button>
+                 </div>
+               )}
+
+               <div className={`flex-grow flex flex-col items-center justify-start pt-8 pb-12 px-4 lg:px-12 touch-none select-none ${isDragging ? 'cursor-grabbing' : (activeTool === 'pan' ? 'cursor-grab' : 'cursor-zoom-in')}`} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}>
+                  <div ref={previewRef} className="w-full max-w-3xl aspect-[3/4] relative shadow-[30px_30px_0px_rgba(0,0,0,0.1)] bg-black group/preview border-[10px] border-black overflow-hidden transition-all pointer-events-none">
+                     {state.isCardStyled ? (
+                       <TradingCard frontImage={state.resultImage!} backImage={state.sourceImage!} stats={state.stats || {strength:5,intelligence:5,agility:5,speed:5}} characterName={state.characterName} characterDescription={state.characterDescription} category={state.selectedCategory?.name || 'HERO'} isFlipped={isFlipped} onFlip={() => {}} imageScale={state.cardTransform.scale} imageOffset={state.cardTransform.offset} flipH={state.cardTransform.flipH} flipV={state.cardTransform.flipV} backImageScale={state.cardBackTransform.scale} backImageOffset={state.cardBackTransform.offset} backFlipH={state.cardBackTransform.flipH} backFlipV={state.cardBackTransform.flipV} />
+                     ) : (
+                       <div className="w-full h-full relative overflow-hidden bg-black">
+                          <img src={state.resultImage!} className="w-full h-full object-cover origin-center" style={{ transform: `translate(${state.comicTransform.offset.x}%, ${state.comicTransform.offset.y}%) scale(${state.comicTransform.scale * (state.comicTransform.flipH ? -1 : 1)}, ${state.comicTransform.scale * (state.comicTransform.flipV ? -1 : 1)})` }} />
+                          {state.isComicStyled && <ComicFrame category={state.selectedCategory?.name || 'LEGEND'} subcategory={state.selectedSubcategory?.name || 'HERO'} customTitle={state.characterName} titleOffset={state.titleOffset} showPriceBadge={state.showPriceBadge} showBrandLogo={state.showBrandLogo} />}
+                       </div>
+                     )}
+                  </div>
                </div>
             </div>
-            <div className="lg:col-span-5 bg-black border-l border-zinc-900 flex flex-col p-10 space-y-12 overflow-y-auto custom-scrollbar">
-               <div className="space-y-6"><h3 className="text-3xl font-orbitron font-black italic uppercase tracking-tighter">ARTIFACT <span className="text-blue-500">CONTROL</span></h3><div className="flex bg-zinc-900 p-1 rounded-2xl space-x-1">{['raw', 'comic', 'card'].map(type => (<button key={type} onClick={() => setState(p => ({ ...p, isComicStyled: type==='comic', isCardStyled: type==='card' }))} className={`flex-grow py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${((type==='comic' && state.isComicStyled) || (type==='card' && state.isCardStyled) || (type==='raw' && !state.isComicStyled && !state.isCardStyled)) ? 'bg-blue-600 text-white' : 'text-zinc-500'}`}>{type}</button>))}</div></div>
-               <div className="space-y-8 bg-zinc-900/30 p-8 rounded-[2rem] border border-zinc-800">
-                  <div className="space-y-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Identity Details</p>
-                    <input type="text" placeholder="NAME" value={state.characterName} onChange={e => setState(p => ({ ...p, characterName: e.target.value }))} className="w-full bg-black border border-zinc-800 rounded-2xl px-6 py-4 text-sm font-bold tracking-tight outline-none focus:border-blue-500 uppercase" />
-                    <textarea placeholder="DESCRIPTION" value={state.characterDescription} onChange={e => setState(p => ({ ...p, characterDescription: e.target.value }))} className="w-full bg-black border border-zinc-800 rounded-2xl px-6 py-4 text-sm font-medium outline-none focus:border-blue-500 h-32 resize-none" />
-                  </div>
-                  <div className="space-y-6">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Positioning</p>
-                    <div className="space-y-4">
-                      <div className="flex items-center space-x-4"><span className="text-[10px] font-bold w-12 uppercase text-zinc-600">Scale</span><input type="range" min="0.5" max="2" step="0.01" value={state.resultScale} onChange={e => setState(p => ({ ...p, resultScale: parseFloat(e.target.value) }))} className="flex-grow accent-blue-600" /></div>
+            
+            <div className="lg:col-span-3 bg-white flex flex-col border-l-8 border-black text-black overflow-y-auto custom-scrollbar h-full">
+               <div className="p-8 space-y-12 pb-24">
+                 <div className="flex items-center space-x-4"><h3 className="text-6xl font-comic italic uppercase tracking-tighter -skew-x-12 comic-text-3d">DATA <span className="text-[#fde910]">LOG</span></h3></div>
+                 
+                 <div className="space-y-12">
+                    <div className="space-y-6 bg-zinc-50 p-6 border-4 border-black shadow-[8px_8px_0px_#660000]">
+                      <p className="text-xl font-comic uppercase tracking-widest text-[#e21c23]">ID PROFILE</p>
+                      <input type="text" placeholder="IDENTITY NAME" value={state.characterName} onChange={e => setState(p => ({ ...p, characterName: e.target.value }))} className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold uppercase outline-none focus:bg-yellow-50" />
+                      <textarea placeholder="CHARACTER ORIGIN" value={state.characterDescription} onChange={e => setState(p => ({ ...p, characterDescription: e.target.value }))} className="w-full bg-white border-4 border-black px-4 py-3 text-base font-medium outline-none h-32 resize-none focus:bg-yellow-50" />
                     </div>
-                  </div>
+
+                    {state.isCardStyled && (
+                      <div className="space-y-6 bg-zinc-50 p-6 border-4 border-black shadow-[8px_8px_0px_#660000]">
+                        <p className="text-xl font-comic uppercase tracking-widest text-[#e21c23] italic">POWER GRID</p>
+                        <div className="bg-white p-4 border-4 border-black shadow-[6px_6px_0px_#660000] space-y-4">
+                          {['strength', 'intelligence', 'agility', 'speed'].map(stat => (
+                            <div key={stat} className="space-y-2">
+                              <div className="flex justify-between items-center"><label className="text-xs font-black uppercase">{stat}</label><span className="text-xs font-bold">{(state.stats as any)[stat]}/7</span></div>
+                              <input type="range" min="1" max="7" step="1" value={(state.stats as any)[stat]} onChange={e => setState(p => ({ ...p, stats: { ...p.stats!, [stat]: parseInt(e.target.value) } }))} className="w-full h-1 bg-black rounded-none appearance-none cursor-pointer accent-[#3b82f6]" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-6 bg-zinc-50 p-6 border-4 border-black shadow-[8px_8px_0px_#660000]">
+                      <p className="text-xl font-comic uppercase tracking-widest text-[#e21c23] italic">DIGITAL ASSETS</p>
+                      <div className="flex flex-col gap-4">
+                        {state.isCardStyled ? (
+                          <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => handleDownload('card-front', 'front')} disabled={isDownloading} className="action-btn-yellow !py-4 !text-xl flex-grow"><i className="fa-solid fa-download mr-2"></i>FRONT</button>
+                            <button onClick={() => handleDownload('card-back', 'back')} disabled={isDownloading} className="action-btn-yellow !py-4 !text-xl flex-grow"><i className="fa-solid fa-download mr-2"></i>BACK</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => handleDownload(state.isComicStyled ? 'comic-cover' : 'raw-hero')} disabled={isDownloading} className="action-btn-yellow !py-5 !text-2xl w-full">
+                            <i className="fa-solid fa-download mr-3"></i>SAVE {state.isComicStyled ? 'COMIC COVER' : 'RAW IMAGE'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-6 bg-zinc-50 p-6 border-4 border-black shadow-[8px_8px_0px_#660000]">
+                      <p className="text-xl font-comic uppercase tracking-widest text-[#e21c23] italic">PUBLICATION</p>
+                      <div className="bg-white p-4 border-4 border-black shadow-[6px_6px_0px_#660000] space-y-4">
+                        {state.isComicStyled && (
+                          <>
+                            <label className="flex items-center space-x-4 cursor-pointer"><input type="checkbox" checked={state.showPriceBadge} onChange={e => setState(p => ({ ...p, showPriceBadge: e.target.checked }))} className="w-6 h-6 border-4 border-black accent-[#e21c23]" /><span className="text-lg font-comic uppercase">Price Badge</span></label>
+                            <label className="flex items-center space-x-4 cursor-pointer"><input type="checkbox" checked={state.showBrandLogo} onChange={e => setState(p => ({ ...p, showBrandLogo: e.target.checked }))} className="w-6 h-6 border-4 border-black accent-[#e21c23]" /><span className="text-lg font-comic uppercase">Brand Logo</span></label>
+                          </>
+                        )}
+                        <label className="flex items-center space-x-4 cursor-pointer pt-2 border-t border-zinc-200"><input type="checkbox" checked={state.isPublic} onChange={e => setState(p => ({ ...p, isPublic: e.target.checked }))} className="w-6 h-6 border-4 border-black accent-[#22c55e]" /><span className="text-lg font-comic uppercase text-green-600">Global Feed</span></label>
+                      </div>
+                    </div>
+                 </div>
+
+                 <div className="flex flex-col space-y-4 pt-10 border-t-8 border-black">
+                    <div className="grid grid-cols-2 gap-4">
+                      <button onClick={() => saveToHistory()} disabled={isSaving} className="action-btn-red !py-6 !text-3xl flex-grow">{state.editingId ? 'UPDATE' : 'SAVE'}</button>
+                      {!state.isPublic && <button onClick={() => saveToHistory(true)} disabled={isSaving} className="action-btn-yellow !py-6 !text-3xl flex-grow">SAVE & POST</button>}
+                    </div>
+                    {(state.isComicStyled || state.isCardStyled) && (
+                      <button onClick={handlePhysicalOrderStart} className="action-btn-red !bg-[#e21c23] !text-black w-full !text-4xl !py-8">GET PHYSICAL PRINT!</button>
+                    )}
+                    <button onClick={() => { setIsFlipped(false); setState(p => ({ ...p, step: AppStep.STUDIO, resultImage: null, editingId: null })); }} className="w-full text-xl font-comic uppercase tracking-widest text-zinc-500 hover:text-red-600 py-6 transition-colors">ABORT MISSION</button>
+                 </div>
                </div>
-               <div className="grid grid-cols-2 gap-4"><button onClick={() => saveToHistory(false)} disabled={isSaving} className="py-6 bg-zinc-900 text-white rounded-[1.5rem] font-black uppercase tracking-widest text-[10px] active:scale-95 disabled:opacity-30">VAULT</button><button onClick={() => saveToHistory(true)} disabled={isSaving} className="py-6 bg-zinc-800 text-white rounded-[1.5rem] font-black uppercase tracking-widest text-[10px] active:scale-95 disabled:opacity-30">NEXUS</button></div>
-               {(state.isComicStyled || state.isCardStyled) && (<button onClick={async () => { if (!state.currentUser) { setState(p => ({ ...p, step: AppStep.LOGIN })); return; } setIsCapturingSnapshot(true); try { const snapshot = await captureSnapshot(); setCheckoutSnapshot(snapshot); const savedId = await saveToHistory(false); if (savedId) setState(p => ({ ...p, step: AppStep.CHECKOUT })); } finally { setIsCapturingSnapshot(false); } }} className="w-full py-8 bg-blue-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] text-[11px] active:scale-95 shadow-2xl">ORDER PHYSICAL PRINT</button>)}
-               <button onClick={() => setState(p => ({ ...p, step: AppStep.STUDIO, resultImage: null }))} className="w-full text-[10px] font-black uppercase tracking-widest text-zinc-600 hover:text-white transition-colors">ABANDON</button>
             </div>
           </div>
         )}
 
         {state.step === AppStep.CHECKOUT && (
-          <div className="flex-grow flex items-center justify-center p-6 bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.1)_0%,_transparent_70%)] animate-fade-in">
-             <div className="max-w-3xl w-full bg-zinc-900/50 backdrop-blur-3xl border border-zinc-800 rounded-[3.5rem] p-12 space-y-12 shadow-2xl relative overflow-hidden">
-                {isPaymentSuccess ? (
-                  <div className="text-center space-y-10 py-10 animate-fade-in"><div className="w-32 h-32 bg-green-500/20 rounded-full flex items-center justify-center mx-auto border-4 border-green-500 shadow-xl"><i className="fa-solid fa-check text-5xl text-green-500"></i></div><h2 className="text-4xl font-orbitron font-black uppercase italic">Confirmed</h2><button onClick={() => { setIsPaymentSuccess(false); setState(prev => ({ ...prev, step: AppStep.GALLERY })); }} className="px-12 py-6 bg-white text-black font-black uppercase tracking-widest rounded-2xl hover:bg-blue-500 hover:text-white transition-all">Vault</button></div>
-                ) : isVerifyingWithN8n ? (
-                  <div className="text-center space-y-12 py-16 animate-fade-in"><div className="w-40 h-40 mx-auto border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div><h2 className="text-3xl font-orbitron font-black uppercase italic tracking-tighter">NEURAL VERIFICATION</h2><p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.5em] animate-pulse">Waiting for dimension link confirmation (n8n)</p></div>
-                ) : (
-                  <>
-                    <div className="flex justify-between items-start"><h2 className="text-5xl font-orbitron font-black uppercase italic leading-none tracking-tighter">CHECKOUT</h2><button onClick={goBack} className="w-12 h-12 flex items-center justify-center bg-zinc-950 rounded-full text-zinc-500"><i className="fa-solid fa-times"></i></button></div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-start"><div className="w-full flex items-center justify-center"><div className="w-full max-w-[320px] aspect-[3/4] border-4 border-zinc-900 rounded-3xl overflow-hidden bg-black shadow-2xl">{checkoutSnapshot ? <img src={checkoutSnapshot} className="w-full h-full object-contain" /> : <div className="p-12 text-center text-xs text-zinc-500 font-bold uppercase">Preparing Artifact...</div>}</div></div><div className="space-y-10"><div className="space-y-6"><p className="text-lg font-black text-white uppercase italic tracking-tighter">TOTAL: ${(state.isComicStyled ? adminSettings.priceComicPrint : adminSettings.priceCardSet).toFixed(2)}</p></div><button onClick={initiatePayment} className="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase text-[11px] shadow-2xl shadow-blue-600/30 transition-all active:scale-95">INITIATE PAYMENT</button></div></div>
-                  </>
-                )}
-             </div>
+          <div className="max-w-7xl w-full mx-auto p-8 md:p-16 animate-fade-in flex flex-col items-center">
+            {isPaymentSuccess ? (
+              <div className="text-center space-y-16 py-32 animate-kaboom">
+                 <h2 className="text-9xl font-comic comic-text-3d uppercase">MISSION SUCCESS!</h2>
+                 <p className="text-3xl font-black uppercase tracking-widest">Your physical artifacts are being manufactured.</p>
+                 <button onClick={() => setState(p => ({ ...p, step: AppStep.GALLERY }))} className="action-btn-yellow text-4xl">VIEW YOUR VAULT</button>
+              </div>
+            ) : (
+              <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-24 items-start">
+                <div className="lg:col-span-7 space-y-8">
+                  <div className="grid grid-cols-1 gap-10">
+                    {checkoutSnapshots.map((snap, i) => (
+                      <div key={i} className="bg-white p-3 shadow-[25px_25px_0px_#660000] relative group max-w-[75%] mx-auto">
+                        <img src={snap} className="w-full h-auto" />
+                        <div className="absolute top-4 left-4 bg-black text-white px-3 py-1 font-comic text-xs uppercase border-2 border-white">{checkoutSnapshots.length > 1 ? (i === 0 ? 'FRONT' : 'BACK') : 'ARTIFACT'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="lg:col-span-5 space-y-12 text-black bg-white p-8 lg:p-12 border-8 border-black shadow-[25px_25px_0px_#660000]">
+                  <h2 className="text-6xl lg:text-7xl font-comic italic uppercase tracking-tighter comic-text-3d pt-4">ACQUIRE ARTIFACT</h2>
+                  <div className="space-y-8">
+                    <div className="flex flex-col md:flex-row md:justify-between md:items-center border-b-4 border-black pb-6 gap-2"><span className="text-3xl font-comic uppercase text-[#e21c23]">ITEM:</span><span className="text-3xl font-black uppercase leading-none">{state.isCardStyled ? 'TRADING CARD SET' : 'COMIC BOOK PRINT'}</span></div>
+                    <div className="flex flex-col md:flex-row md:justify-between md:items-center border-b-4 border-black pb-6 gap-2"><span className="text-3xl font-comic uppercase text-[#e21c23]">HERO:</span><span className="text-3xl font-black uppercase leading-none truncate max-w-xs">{state.characterName}</span></div>
+                    <div className="flex flex-col md:flex-row md:justify-between md:items-center pt-8 gap-4"><span className="text-4xl font-comic uppercase text-black">TOTAL COST:</span><span className="text-6xl font-comic text-[#e21c23] leading-none">${state.isCardStyled ? adminSettings.priceCardSet : adminSettings.priceComicPrint}</span></div>
+                  </div>
+                  <div className="space-y-6 pt-10"><button onClick={handleConfirmPurchase} disabled={isProcessingOrder} className="action-btn-yellow w-full py-10 text-5xl">{isProcessingOrder ? 'AUTHORIZING...' : 'PAY WITH PAYPAL'}</button><button onClick={goBack} className="text-2xl font-comic uppercase text-zinc-400 w-full hover:text-red-600 transition-colors">ABORT ACQUISITION</button></div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {state.step === AppStep.COMMUNITY && (
-          <div className="p-8 md:p-20 space-y-16 animate-fade-in">
-             <div className="flex flex-col md:flex-row justify-between items-start md:items-end space-y-8 md:space-y-0">
-               <div><h2 className="text-6xl font-orbitron font-black text-white italic uppercase tracking-tighter leading-none">NEURAL NEXUS</h2><p className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-500 mt-3">Browse the collective</p></div>
-               <div className="flex items-center space-x-4"><button onClick={() => refreshFeed()} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 hover:border-blue-500 text-blue-500 transition-all shadow-lg"><i className={`fa-solid fa-rotate-right ${isRefreshingFeed ? 'animate-spin' : ''}`}></i></button><input type="text" placeholder="SEARCH IDENTITIES..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="bg-zinc-900 px-8 py-4 rounded-2xl border border-zinc-800 text-[11px] font-black uppercase outline-none w-full md:w-64 tracking-[0.2em]" /></div>
-             </div>
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
-               {publicFeed.length > 0 ? publicFeed.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).map(renderArtifactCard) : <div className="col-span-full py-40 text-center text-zinc-700 font-bold uppercase">Nexus quiet...</div>}
-             </div>
+          <div className="p-16 md:p-32 space-y-28 animate-fade-in">
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-14"><div className="transform -rotate-1"><h2 className="text-[12rem] font-comic text-black italic uppercase tracking-tighter leading-none comic-text-3d">GLOBAL <br/><span className="text-[#fde910]">FEED</span></h2></div><div className="flex items-center space-x-6 bg-white p-4 border-8 border-black shadow-[15px_15px_0px_#660000]"><input type="text" placeholder="SEARCH HEROES..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="bg-transparent px-8 py-4 text-3xl font-comic uppercase outline-none w-full md:w-[450px] text-black" /></div></div>
+             <div className="bg-[#e21c23] p-10 border-8 border-black shadow-[15px_15px_0px_#660000]"><h3 className="text-4xl font-comic uppercase text-white mb-8 italic">ACTIVE HEROES</h3><div className="flex space-x-12 overflow-x-auto pb-4 custom-scrollbar">{allProfiles.map(renderCreatorBadge)}</div></div>
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-20">{publicFeed.length > 0 ? publicFeed.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).map(renderArtifactCard) : <div className="col-span-full py-80 text-center text-black/10 font-comic text-9xl italic">SILENCE...</div>}</div>
           </div>
         )}
 
-        {state.step === AppStep.STUDIO && <div className="animate-fade-in h-full flex flex-col items-center justify-center space-y-16 py-32 px-6"><div className="text-center space-y-6"><h2 className="text-6xl md:text-8xl font-orbitron font-black italic uppercase tracking-tighter leading-none">COSPLAY <span className="text-blue-500">STUDIO</span></h2><p className="text-zinc-500 text-xs font-bold uppercase tracking-[0.4em] max-w-xl mx-auto leading-relaxed">Select raw subject matter to begin synthesis.</p></div><div className="w-full max-w-5xl"><PhotoStep onPhotoSelected={handlePhotoSelected} /></div></div>}
-        {state.step === AppStep.GALLERY && <div className="p-8 md:p-20 space-y-16 animate-fade-in"><div className="flex justify-between items-end border-b border-zinc-900 pb-10"><div><h2 className="text-6xl font-orbitron font-black text-white italic uppercase tracking-tighter leading-none">PERSONAL <span className="text-blue-500">VAULT</span></h2><p className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-500 mt-4">Archives</p></div><button onClick={() => setState(prev => ({ ...prev, step: AppStep.STUDIO }))} className="bg-blue-600 px-10 py-5 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-500">Synthesize New</button></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">{galleryItems.length > 0 ? galleryItems.map(item => (<div key={item.id} className="group relative bg-zinc-950 rounded-[2.5rem] overflow-hidden border border-zinc-900 hover:border-blue-500 transition-all"><div className="aspect-[3/4] relative cursor-pointer" onClick={() => handleEditGeneration(item)}><img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" /><div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center"><i className="fa-solid fa-pen-to-square text-2xl"></i></div></div><div className="p-6 flex justify-between items-center bg-black"><h4 className="font-orbitron font-black text-[11px] uppercase truncate">{item.name}</h4><button onClick={async (e) => { e.stopPropagation(); if(confirm("Delete artifact?")) { await deleteGeneration(item.id); loadGallery(state.currentUser!.id); } }} className="text-zinc-800 hover:text-red-500"><i className="fa-solid fa-trash-can"></i></button></div></div>)) : <div className="col-span-full py-40 text-center text-zinc-700 font-bold uppercase">Vault empty</div>}</div></div>}
-        {state.step === AppStep.PROFILE && <div className="max-w-4xl w-full mx-auto p-12 md:p-24 space-y-20 animate-fade-in"><div className="flex flex-col md:flex-row items-center space-y-10 md:space-y-0 md:space-x-12"><div className="w-40 h-40 rounded-[3rem] bg-zinc-900 border-4 border-zinc-800 overflow-hidden relative group">{myProfile?.avatar_url ? <img src={myProfile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-4xl font-bold">{myProfile?.display_name?.[0] || '?'}</div>}<label className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer"><i className="fa-solid fa-camera text-2xl"></i><input type="file" className="hidden" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onloadend = () => setMyProfile(p => p ? ({ ...p, avatar_url: r.result as string }) : null); r.readAsDataURL(f); } }} /></label></div><div><h2 className="text-5xl font-orbitron font-black text-white italic uppercase tracking-tighter">NEURAL IDENTITY</h2><p className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">System Interface</p></div></div><form onSubmit={handleUpdateProfile} className="space-y-12"><div className="grid grid-cols-1 md:grid-cols-2 gap-10"><div className="space-y-4"><label className="text-[10px] font-black uppercase text-zinc-600 ml-4">Display Handle</label><input type="text" value={myProfile?.display_name || ''} onChange={e => setMyProfile(p => p ? ({ ...p, display_name: e.target.value }) : null)} className="w-full bg-zinc-900/40 border border-zinc-800 rounded-3xl px-8 py-5 text-sm font-bold uppercase" /></div></div><button type="submit" disabled={isUpdatingProfile} className="w-full py-8 bg-blue-600 text-white rounded-[2.5rem] font-black uppercase text-[11px] shadow-2xl shadow-blue-600/30">SYNC IDENTITY</button></form><button onClick={handleLogout} className="w-full text-[10px] font-black uppercase text-red-600/50 pt-12">Sever Neural Link</button></div>}
-        {(state.step === AppStep.LOGIN || state.step === AppStep.SIGNUP) && <div className="max-w-md w-full mx-auto p-12 bg-zinc-900/40 border border-zinc-800 rounded-[3.5rem] space-y-12 animate-fade-in m-auto"><div className="text-center space-y-6"><div className="flex bg-zinc-950 p-1.5 rounded-2xl border border-zinc-800 space-x-1.5"><button onClick={() => setState(prev => ({ ...prev, step: AppStep.LOGIN }))} className={`flex-grow py-3 text-[10px] font-black uppercase rounded-xl transition-all ${state.step === AppStep.LOGIN ? 'bg-blue-600 text-white' : 'text-zinc-500'}`}>Login</button><button onClick={() => setState(prev => ({ ...prev, step: AppStep.SIGNUP }))} className={`flex-grow py-3 text-[10px] font-black uppercase rounded-xl transition-all ${state.step === AppStep.SIGNUP ? 'bg-blue-600 text-white' : 'text-zinc-500'}`}>Sign-Up</button></div><h2 className="text-4xl font-orbitron font-black uppercase italic leading-none">{state.step === AppStep.LOGIN ? 'Neural Link' : 'New Identity'}</h2></div><form onSubmit={handleAuth} className="space-y-8"><div className="space-y-5"><input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full bg-black/60 border border-zinc-800 rounded-2xl px-8 py-5 text-sm outline-none" placeholder="Email" required /><input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full bg-black/60 border border-zinc-800 rounded-2xl px-8 py-5 text-sm outline-none" placeholder="Access Key" required /></div>{state.error && <p className="text-red-500 text-[10px] font-bold uppercase text-center animate-pulse">{state.error}</p>}<button type="submit" disabled={authLoading} className="w-full py-7 bg-blue-600 rounded-2xl font-black uppercase text-[11px] shadow-2xl shadow-blue-600/20">{authLoading ? <i className="fa-solid fa-spinner animate-spin"></i> : (state.step === AppStep.LOGIN ? 'INITIATE' : 'CREATE')}</button></form></div>}
-        {state.step === AppStep.CATEGORY_SELECT && (<div className="py-24 animate-fade-in m-auto w-full"><Carousel items={CATEGORIES} onItemSelect={(cat) => setState(prev => ({ ...prev, selectedCategory: cat, step: AppStep.SUBCATEGORY_SELECT }))} title="SELECT DIMENSION" /></div>)}
-        {state.step === AppStep.SUBCATEGORY_SELECT && (<div className="py-24 animate-fade-in m-auto w-full"><Carousel items={state.selectedCategory?.subcategories || []} onItemSelect={(sub) => setState(prev => ({ ...prev, selectedSubcategory: sub }))} title={`${state.selectedCategory?.name} DOMAINS`} isSubView={true} onBack={goBack} onConfirm={startProcessing} selectedIndex={state.selectedCategory?.subcategories?.findIndex(s => s.id === state.selectedSubcategory?.id)} /></div>)}
-        {state.step === AppStep.PROCESSING && (<div className="flex flex-col items-center justify-center space-y-12 p-12 m-auto"><img src={logoUrl} className="w-64 h-64 animate-heartbeat" /><h2 className="text-5xl font-orbitron font-black text-blue-500 animate-pulse uppercase leading-none">Shifting...</h2></div>)}
+        {state.step === AppStep.GALLERY && <div className="p-16 md:p-32 space-y-28 animate-fade-in"><div className="flex justify-between items-end border-b-8 border-black pb-20"><div className="transform rotate-1"><h2 className="text-[12rem] font-comic text-black italic uppercase tracking-tighter leading-none comic-text-3d">MY <br/><span className="text-[#fde910]">VAULT</span></h2></div><button onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.STUDIO })); }} className="action-btn-red text-4xl">ADD NEW</button></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-20">{galleryItems.length > 0 ? galleryItems.map(renderArtifactCard) : <div className="col-span-full py-80 text-center text-black/10 font-comic text-9xl italic">VAULT EMPTY...</div>}</div></div>}
+        {state.step === AppStep.CATEGORY_SELECT && (<div className="py-40 animate-fade-in m-auto w-full"><Carousel items={CATEGORIES} onItemSelect={(cat) => setState(prev => ({ ...prev, selectedCategory: cat, step: AppStep.SUBCATEGORY_SELECT }))} title="PICK A UNIVERSE" /></div>)}
+        {state.step === AppStep.SUBCATEGORY_SELECT && (<div className="py-40 animate-fade-in m-auto w-full"><Carousel items={state.selectedCategory?.subcategories || []} onItemSelect={(sub) => setState(prev => ({ ...prev, selectedSubcategory: sub }))} title={`${state.selectedCategory?.name} LOCATIONS`} isSubView={true} onBack={goBack} onConfirm={startProcessing} selectedIndex={state.selectedCategory?.subcategories?.findIndex(s => s.id === state.selectedSubcategory?.id)} /></div>)}
+        {state.step === AppStep.PROCESSING && (<div className="flex flex-col items-center justify-center space-y-20 p-24 m-auto"><div className="speech-bubble mb-10 transform -rotate-3 scale-150 animate-kaboom"><p className="text-4xl font-comic text-[#e21c23] uppercase">POW! BIFF! PROCESSING!</p></div><h2 className="text-[10rem] font-comic comic-text-3d animate-pulse -skew-x-12">SHIFTING DIMENSIONS...</h2></div>)}
+        {(state.step === AppStep.LOGIN || state.step === AppStep.SIGNUP) && (
+          <div className="max-w-xl w-full mx-auto p-16 bg-white border-8 border-black space-y-12 animate-fade-in m-auto shadow-[20px_20px_0px_#660000] text-black">
+            <div className="text-center space-y-6"><h2 className="text-8xl font-comic uppercase italic tracking-tighter comic-text-3d">{state.step === AppStep.LOGIN ? 'IDENTIFY!' : 'ENLIST!'}</h2></div>
+            <form onSubmit={handleAuth} className="space-y-10"><div className="space-y-6"><input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full bg-white border-4 border-black px-8 py-5 text-xl font-black uppercase outline-none focus:bg-yellow-50" placeholder="HERO EMAIL" required /><input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full bg-white border-4 border-black px-8 py-5 text-xl font-black uppercase outline-none focus:bg-yellow-50" placeholder="SECRET KEY" required /></div>{state.error && (<div className="p-5 border-4 border-black bg-red-100 transform -rotate-1"><p className="text-[#e21c23] text-lg font-comic uppercase text-center leading-tight">{state.error}</p></div>)}<div className="flex flex-col space-y-4"><button type="submit" disabled={authLoading} className="action-btn-red w-full py-8 text-4xl">{authLoading ? 'CONNECTING...' : 'LAUNCH!'}</button><button type="button" onClick={handleGuestLogin} className="action-btn-yellow w-full py-6 text-3xl">PLAY AS GUEST!</button></div><div className="flex justify-between items-center pt-4"><button type="button" onClick={() => setState(prev => ({ ...prev, step: state.step === AppStep.LOGIN ? AppStep.SIGNUP : AppStep.LOGIN, error: null }))} className="text-xl font-comic uppercase text-zinc-400 hover:text-black transition-colors">{state.step === AppStep.LOGIN ? 'ENLIST NEW HERO' : 'USE OLD IDENTITY'}</button><button type="button" onClick={() => setShowAdmin(true)} className="text-xl font-comic uppercase text-zinc-400 hover:text-red-600">SETUP</button></div></form>
+          </div>
+        )}
       </main>
 
-      {/* Full Screen Zoom Modal */}
-      {isZoomed && (
-        <div className="fixed inset-0 z-[500] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-4 md:p-12 animate-fade-in">
-           <div className="absolute top-6 right-6 z-[510]"><button onClick={() => setIsZoomed(false)} className="w-16 h-16 bg-zinc-900/80 border border-zinc-800 rounded-full flex items-center justify-center text-white hover:bg-blue-600 transition-all shadow-2xl"><i className="fa-solid fa-times text-2xl"></i></button></div>
-           <div className="w-full h-full max-w-[85vh] aspect-[3/4] relative">
-              {state.isCardStyled ? (
-                <TradingCard 
-                  frontImage={state.resultImage!} 
-                  backImage={state.sourceImage!} 
-                  stats={state.stats!} 
-                  characterName={state.characterName} 
-                  characterDescription={state.characterDescription} 
-                  category={state.selectedCategory?.name || 'GENERIC'} 
-                  isFlipped={isFlipped}
-                  onFlip={() => setIsFlipped(!isFlipped)}
-                  statusText={state.cardStatusText}
-                  imageScale={state.resultScale}
-                  imageOffset={state.resultOffset}
-                />
-              ) : (
-                <div className="w-full h-full relative overflow-hidden bg-black border-[6px] border-zinc-900 rounded-[3rem]"><img src={state.resultImage!} className="w-full h-full object-cover" style={{ transform: `scale(${state.resultScale}) translate(${state.resultOffset.x}%, ${state.resultOffset.y}%)` }} />{state.isComicStyled && <ComicFrame category={state.selectedCategory?.name || 'LEGEND'} subcategory={state.selectedSubcategory?.name || 'HERO'} customTitle={state.characterName} />}</div>
-              )}
-           </div>
-        </div>
-      )}
-
-      {showAdmin && (
-        <div className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-fade-in">
-          <div className="max-w-5xl w-full bg-zinc-950 border border-zinc-800 rounded-[4rem] p-12 space-y-12 shadow-2xl flex flex-col h-[90vh]">
-            <div className="flex justify-between items-center"><h2 className="text-2xl font-orbitron font-black uppercase italic tracking-tighter">NEURAL ADMIN PANEL</h2><button onClick={() => setShowAdmin(false)} className="p-4 bg-zinc-900 rounded-full hover:bg-zinc-800 transition-colors"><i className="fa-solid fa-times text-xl"></i></button></div>
-            <div className="flex-grow overflow-y-auto custom-scrollbar space-y-10 pr-4">
-               
-               {/* STEP 1: DATABASE REPAIR */}
-               <div className="p-10 bg-red-600/10 border border-red-500/30 rounded-[2.5rem] space-y-8">
-                  <div className="flex items-center space-x-3"><i className="fa-solid fa-wrench text-red-500 text-3xl"></i><p className="text-xl font-black text-red-500 uppercase tracking-widest">STEP 1: DATABASE REPAIR (SQL)</p></div>
-                  <div className="p-6 bg-red-500/5 rounded-2xl border border-red-500/10">
-                     <p className="text-[12px] text-white font-black leading-relaxed uppercase mb-2">RUN THIS SCRIPT IN SUPABASE SQL EDITOR TO FIX 'POLICY ALREADY EXISTS' OR '406' ERRORS:</p>
-                     <p className="text-[10px] text-zinc-400 font-bold uppercase">v6 OPTIMIZED RESET: Ensures perfect sync between neural artifacts and nexus synergy.</p>
-                  </div>
-                  <div className="relative group">
-                    <pre className="w-full bg-black border border-zinc-800 rounded-2xl p-6 text-[11px] font-mono text-blue-400 overflow-x-auto h-64 custom-scrollbar select-all">
-                      {nexusSchemaFix}
-                    </pre>
-                    <button 
-                      onClick={() => { navigator.clipboard.writeText(nexusSchemaFix); alert("Optimized Repair SQL copied! Now paste it into Supabase SQL Editor and click RUN."); }}
-                      className="absolute top-4 right-4 bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl"
-                    >
-                      COPY OPTIMIZED REPAIR
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest bg-zinc-900 p-4 rounded-xl text-center italic">After running the script, refresh this browser tab entirely.</p>
-               </div>
-
-               {/* OTHER SETTINGS */}
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div className="p-8 bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] space-y-6">
-                    <p className="text-xs font-black text-blue-400 uppercase tracking-widest">SUPABASE CONFIG</p>
-                    <input type="text" placeholder="URL" value={adminSettings.supabaseUrl} onChange={e => setAdminSettings({...adminSettings, supabaseUrl: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl px-6 py-4 text-[11px] font-mono outline-none" />
-                    <input type="password" placeholder="ANON KEY" value={adminSettings.supabaseAnonKey} onChange={e => setAdminSettings({...adminSettings, supabaseAnonKey: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl px-6 py-4 text-[11px] font-mono outline-none" />
-                 </div>
-                 <div className="p-8 bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] space-y-6">
-                    <p className="text-xs font-black text-blue-400 uppercase tracking-widest">N8N HUB</p>
-                    <input type="text" placeholder="Webhook URL" value={adminSettings.n8nWebhookUrl} onChange={e => setAdminSettings({...adminSettings, n8nWebhookUrl: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-xl px-6 py-4 text-[11px] font-mono outline-none" />
-                 </div>
-               </div>
-            </div>
-            <button onClick={() => { localStorage.setItem('cos-admin-settings', JSON.stringify(adminSettings)); setShowAdmin(false); window.location.reload(); }} className="w-full py-7 bg-blue-600 text-white rounded-[2.5rem] font-black uppercase text-[11px] shadow-2xl shadow-blue-600/30">SAVE & REBOOT NEURAL HUB</button>
-          </div>
-        </div>
-      )}
-
       {selectedArtifact && (
-        <div className="fixed inset-0 z-[200] bg-black/98 backdrop-blur-2xl flex items-center justify-center p-4 md:p-12 overflow-y-auto animate-fade-in" onClick={() => setSelectedArtifact(null)}>
-           <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-start" onClick={e => e.stopPropagation()}>
-              <div className="lg:col-span-7 aspect-[3/4] bg-zinc-950 rounded-[3rem] overflow-hidden border border-zinc-800 shadow-2xl relative"><img src={selectedArtifact.image} className="w-full h-full object-cover" /></div>
-              <div className="lg:col-span-5 space-y-12 py-10">
-                 <div className="flex justify-between items-start">
-                    <div><h2 className="text-5xl font-orbitron font-black text-white italic uppercase tracking-tighter leading-none">{selectedArtifact.name}</h2><div className="flex items-center space-x-3 mt-4"><div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden">{selectedArtifact.userProfile?.avatar_url ? <img src={selectedArtifact.userProfile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-black">{selectedArtifact.userProfile?.display_name?.[0] || 'P'}</div>}</div><span className="text-xs font-black text-zinc-500 uppercase tracking-widest">{selectedArtifact.userProfile?.display_name || 'PILOT'}</span></div></div>
-                    <button onClick={() => setSelectedArtifact(null)} className="p-4 bg-zinc-900 rounded-full hover:bg-zinc-800 text-zinc-400"><i className="fa-solid fa-times text-xl"></i></button>
-                 </div>
-                 <div className="bg-zinc-900/40 p-10 rounded-[2.5rem] border border-zinc-800/60 space-y-8 backdrop-blur-md relative overflow-hidden">
-                    <p className="text-[11px] text-zinc-300 leading-relaxed font-bold uppercase italic relative z-10">{selectedArtifact.description}</p>
-                    <div className="grid grid-cols-2 gap-4 pt-4">
-                        <button 
-                          onClick={(e) => handleLike(e, selectedArtifact!.id)} 
-                          className="flex items-center justify-center space-x-3 py-5 bg-zinc-950 border border-zinc-800 rounded-2xl active:scale-95 group transition-all"
-                        >
-                          <i className={`fa-solid fa-bolt text-lg ${selectedArtifact.userHasLiked ? 'text-blue-500' : 'text-zinc-700 group-hover:text-blue-400'}`}></i>
-                          <span className="text-[11px] font-black uppercase text-zinc-400">{selectedArtifact.likeCount || 0} Synergy</span>
-                        </button>
+        <div className="fixed inset-0 z-[500] bg-black/95 flex items-center justify-center p-10 md:p-32 overflow-y-auto animate-fade-in" onClick={() => { setIsFlipped(false); setSelectedArtifact(null); }}>
+           <div className="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-12 gap-24 items-center" onClick={e => e.stopPropagation()}>
+              <div className="lg:col-span-7 bg-white p-3 border-8 border-black shadow-[30px_30px_0px_rgba(102,0,0,0.5)]">
+                <div ref={previewRef} className="relative aspect-[3/4] overflow-hidden bg-black">
+                  {selectedArtifact.type === 'card' ? (
+                     <>
+                        <TradingCard frontImage={selectedArtifact.image} backImage={selectedArtifact.originalSourceImage || selectedArtifact.image} stats={selectedArtifact.stats || {strength:5,intelligence:5,agility:5,speed:5}} characterName={selectedArtifact.name} characterDescription={selectedArtifact.description || ''} category={selectedArtifact.category} isFlipped={isFlipped} onFlip={() => setIsFlipped(!isFlipped)} imageScale={selectedArtifact.cardTransform?.scale} imageOffset={selectedArtifact.cardTransform?.offset} flipH={selectedArtifact.cardTransform?.flipH} flipV={selectedArtifact.cardTransform?.flipV} backImageScale={selectedArtifact.cardBackTransform?.scale} backImageOffset={selectedArtifact.cardBackTransform?.offset} backFlipH={selectedArtifact.cardBackTransform?.flipH} backFlipV={selectedArtifact.cardBackTransform?.flipV} />
+                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-1 font-comic text-sm border-2 border-white animate-bounce pointer-events-none z-[100]">TAP TO FLIP</div>
+                     </>
+                  ) : (
+                    <>
+                        <img src={selectedArtifact.image} className="w-full h-full object-cover origin-center" style={{ transform: `translate(${selectedArtifact.comicTransform?.offset?.x || 0}%, ${selectedArtifact.comicTransform?.offset?.y || 0}%) scale(${(selectedArtifact.comicTransform?.scale || 1) * (selectedArtifact.comicTransform?.flipH ? -1 : 1)}, ${(selectedArtifact.comicTransform?.scale || 1) * (selectedArtifact.comicTransform?.flipV ? -1 : 1)})` }} />
+                        {selectedArtifact.type === 'comic' && <ComicFrame category={selectedArtifact.category} subcategory="" customTitle={selectedArtifact.name} titleOffset={selectedArtifact.titleOffset} showPriceBadge={selectedArtifact.showPriceBadge} showBrandLogo={selectedArtifact.showBrandLogo} />}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="lg:col-span-5 space-y-16">
+                 <div className="flex justify-between items-start"><div className="space-y-8"><h2 className="text-8xl md:text-10xl font-comic text-white italic uppercase tracking-tighter leading-none comic-text-3d">{selectedArtifact.name}</h2><div className="bg-white p-4 border-8 border-black inline-block -rotate-3"><span className="text-3xl font-comic text-black uppercase">By {selectedArtifact.userProfile?.display_name || 'Hero'}</span></div></div><button onClick={() => { setIsFlipped(false); setSelectedArtifact(null); }} className="p-8 bg-white border-8 border-black hover:bg-[#e21c23] hover:text-white transition-all"><i className="fa-solid fa-times text-5xl"></i></button></div>
+                 <div className="bg-white p-12 border-8 border-black shadow-[15px_15px_0px_#660000] space-y-10 text-black">
+                    <p className="text-2xl font-bold uppercase italic leading-tight">{selectedArtifact.description}</p>
+                    <div className="flex flex-col space-y-4 pt-4">
+                      {state.currentUser?.id === selectedArtifact.userId && (<button onClick={() => togglePublicStatus(selectedArtifact)} className={`w-full py-4 font-comic text-2xl uppercase border-4 border-black transition-all ${selectedArtifact.isPublic ? 'bg-green-100 text-green-800' : 'bg-zinc-100 text-zinc-800'}`}>{selectedArtifact.isPublic ? 'MAKE PRIVATE' : 'MAKE PUBLIC'}</button>)}
+                      <button onClick={(e) => handleLike(e, selectedArtifact!.id)} className="action-btn-red w-full text-3xl">SYNERGY: {selectedArtifact.likeCount || 0}</button>
+                      
+                      {/* Detailed Download Controls in Modal */}
+                      <div className="bg-zinc-100 p-6 border-4 border-black space-y-4">
+                        <p className="text-xl font-comic uppercase tracking-widest text-[#e21c23]">GET DIGITAL FILE</p>
+                        {selectedArtifact.type === 'card' ? (
+                          <div className="grid grid-cols-2 gap-4">
+                            <button onClick={() => handleDownload('card-front', 'front')} disabled={isDownloading} className="action-btn-yellow !py-4 !text-xl flex-grow"><i className="fa-solid fa-download mr-2"></i>FRONT</button>
+                            <button onClick={() => handleDownload('card-back', 'back')} disabled={isDownloading} className="action-btn-yellow !py-4 !text-xl flex-grow"><i className="fa-solid fa-download mr-2"></i>BACK</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => handleDownload(selectedArtifact!.type === 'comic' ? 'comic-cover' : 'raw-hero')} disabled={isDownloading} className="action-btn-yellow w-full text-2xl !py-4">
+                            <i className="fa-solid fa-download mr-2"></i>SAVE AS {selectedArtifact.type === 'comic' ? 'COMIC' : 'RAW'} PNG
+                          </button>
+                        )}
+                      </div>
+
+                      {selectedArtifact.type !== 'raw' && (<button onClick={handlePhysicalOrderStart} className="action-btn-yellow w-full text-3xl !bg-[#fde910]">ORDER PHYSICAL ARTIFACT</button>)}
+                      {state.currentUser && (state.currentUser.id === selectedArtifact.userId || isAdmin) && (<div className="flex gap-4"><button onClick={() => handleEditHero(selectedArtifact)} className="action-btn-yellow flex-grow text-2xl !bg-[#fde910]"><i className="fa-solid fa-pen-to-square mr-3"></i> EDIT HERO</button><button onClick={() => handleDeleteHero(selectedArtifact.id)} className="p-6 bg-red-600 border-4 border-black text-white hover:bg-black transition-all"><i className="fa-solid fa-trash text-2xl"></i></button></div>)}
                     </div>
                  </div>
               </div>
            </div>
         </div>
       )}
-      <footer className="py-20 text-center border-t border-zinc-900 text-zinc-800 text-[11px] font-black uppercase tracking-[0.6em] bg-black/80 backdrop-blur-xl">© 2024 FOR THE COS. DIMENSIONS SYNERGIZED VIA n8n NEURAL HUB.</footer>
+
+      {showAdmin && (
+        <div className="fixed inset-0 z-[600] bg-black/95 flex items-center justify-center p-10 animate-fade-in">
+          <div className="max-w-4xl w-full bg-white border-8 border-black p-16 space-y-12 shadow-[25px_25px_0px_#660000] text-black">
+            <div className="flex justify-between items-center"><h2 className="text-7xl font-comic uppercase italic tracking-tighter comic-text-3d">SETUP PANEL</h2><button onClick={() => setShowAdmin(false)} className="action-btn-red !py-4 !text-xl">CLOSE</button></div>
+            <div className="space-y-8"><div className="p-8 bg-zinc-100 border-4 border-black space-y-6"><p className="text-xl font-comic uppercase tracking-widest text-[#e21c23]">SUPABASE CONNECTION</p><input type="text" placeholder="SUPABASE URL" value={adminSettings.supabaseUrl || ''} onChange={e => setAdminSettings({...adminSettings, supabaseUrl: e.target.value})} className="w-full bg-white border-4 border-black px-6 py-4 font-mono text-sm outline-none" /><input type="password" placeholder="ANON KEY" value={adminSettings.supabaseAnonKey || ''} onChange={e => setAdminSettings({...adminSettings, supabaseAnonKey: e.target.value})} className="w-full bg-white border-4 border-black px-6 py-4 font-mono text-sm outline-none" /></div><div className="p-8 bg-zinc-100 border-4 border-black space-y-6"><p className="text-xl font-comic uppercase tracking-widest text-[#fde910] comic-text-3d">AUTOMATION NODE</p><input type="text" placeholder="WEBHOOK URL" value={adminSettings.n8nWebhookUrl || ''} onChange={e => setAdminSettings({...adminSettings, n8nWebhookUrl: e.target.value})} className="w-full bg-white border-4 border-black px-6 py-4 font-mono text-sm outline-none" /></div></div>
+            <button onClick={() => { localStorage.setItem('cos-admin-settings', JSON.stringify(adminSettings)); setShowAdmin(false); window.location.reload(); }} className="action-btn-yellow w-full py-8 text-4xl">SAVE & REBOOT CORE!</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

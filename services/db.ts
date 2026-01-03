@@ -1,6 +1,5 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { SavedGeneration, ApiLog, PhysicalOrder, User, UserProfile, Comment } from '../types';
+import { SavedGeneration, PhysicalOrder, User, UserProfile } from '../types';
 
 const isValid = (val: any): val is string => {
   if (typeof val !== 'string') return false;
@@ -156,23 +155,12 @@ export const getProfileById = async (userId: string): Promise<UserProfile | null
   return data;
 };
 
-export const updateProfile = async (profile: Partial<UserProfile>): Promise<void> => {
+export const getAllProfiles = async (): Promise<UserProfile[]> => {
   const client = getSupabase();
-  if (!client || !profile.id) throw new Error("Access denied.");
-  
-  let avatarUrl = profile.avatar_url;
-  if (avatarUrl && avatarUrl.startsWith('data:')) {
-    avatarUrl = await uploadToStorage(avatarUrl, 'avatars');
-  }
-
-  const payload: any = {
-    id: profile.id,
-    display_name: profile.display_name,
-    avatar_url: avatarUrl
-  };
-
-  const { error } = await client.from('profiles').upsert(payload, { onConflict: 'id' });
-  if (error) throw error;
+  if (!client) return [];
+  const { data, error } = await client.from('profiles').select('*').limit(50);
+  if (error) return [];
+  return data;
 };
 
 export const toggleLike = async (userId: string, generationId: string): Promise<boolean> => {
@@ -197,6 +185,12 @@ export const toggleLike = async (userId: string, generationId: string): Promise<
   }
 };
 
+export const updateGenerationVisibility = async (id: string, isPublic: boolean): Promise<void> => {
+  const client = getSupabase();
+  if (!client) return;
+  await client.from('generations').update({ is_public: isPublic }).eq('id', id);
+};
+
 export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
   const client = getSupabase();
   if (!client) throw new Error("Cloud core connection is not active.");
@@ -206,7 +200,14 @@ export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
 
   const packedStats = {
     ...gen.stats,
-    _transform: { scale: gen.resultScale, offset: gen.resultOffset }
+    _transforms: { 
+      comic: gen.comicTransform,
+      card: gen.cardTransform,
+      cardBack: gen.cardBackTransform,
+      titleOffset: gen.titleOffset,
+      showPriceBadge: gen.showPriceBadge,
+      showBrandLogo: gen.showBrandLogo
+    }
   };
 
   const payload: any = {
@@ -229,11 +230,13 @@ export const saveGeneration = async (gen: SavedGeneration): Promise<void> => {
 };
 
 const mapGeneration = (item: any, currentUserId?: string): SavedGeneration => {
-  const transform = item.stats?._transform;
+  const transforms = item.stats?._transforms;
   const likes = Array.isArray(item.likes) ? item.likes : [];
   const likeCount = likes.length;
   const userHasLiked = currentUserId ? likes.some((l: any) => l.user_id === currentUserId) : false;
   
+  const defaultTransform = { scale: 1, offset: { x: 0, y: 0 }, flipH: false, flipV: false };
+
   return {
     id: item.id, 
     userId: item.user_id, 
@@ -246,8 +249,12 @@ const mapGeneration = (item: any, currentUserId?: string): SavedGeneration => {
     description: item.description, 
     cardStatusText: item.card_status_text,
     originalSourceImage: item.original_source_image, 
-    resultScale: transform?.scale || 1,
-    resultOffset: transform?.offset || { x: 0, y: 0 }, 
+    comicTransform: transforms?.comic || defaultTransform,
+    cardTransform: transforms?.card || defaultTransform,
+    cardBackTransform: transforms?.cardBack || defaultTransform,
+    titleOffset: transforms?.titleOffset || { x: 0, y: 0 },
+    showPriceBadge: transforms?.showPriceBadge !== undefined ? transforms.showPriceBadge : true,
+    showBrandLogo: transforms?.showBrandLogo !== undefined ? transforms.showBrandLogo : true,
     isPublic: item.is_public,
     likeCount,
     userHasLiked,
