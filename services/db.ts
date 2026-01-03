@@ -8,7 +8,7 @@ const isValid = (val: any): val is string => {
     trimmed.length > 0 && 
     trimmed !== 'undefined' && 
     trimmed !== 'null' &&
-    trimmed !== '' &&
+    trimmed !== '' && 
     !trimmed.startsWith('{{')
   );
 };
@@ -153,6 +153,22 @@ export const getProfileById = async (userId: string): Promise<UserProfile | null
   const { data, error } = await client.from('profiles').select('*').eq('id', userId).single();
   if (error) return null;
   return data;
+};
+
+export const updateProfile = async (profile: UserProfile): Promise<void> => {
+  const client = getSupabase();
+  if (!client) throw new Error("Cloud core connection is not active.");
+  
+  const { error } = await client
+    .from('profiles')
+    .update({
+      display_name: profile.display_name,
+      avatar_url: profile.avatar_url,
+      socials: profile.socials
+    })
+    .eq('id', profile.id);
+
+  if (error) throw error;
 };
 
 export const getAllProfiles = async (): Promise<UserProfile[]> => {

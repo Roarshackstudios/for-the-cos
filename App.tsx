@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { toPng } from 'html-to-image';
 import { AppStep, AppState, Category, Subcategory, CardStats, AdminSettings, SavedGeneration, ImageTransform, PhysicalOrder, User, UserProfile } from './types';
@@ -16,7 +15,9 @@ import {
   getCurrentUser, 
   signIn, 
   signUp, 
+  signOut,
   getProfileById, 
+  updateProfile,
   getPublicGenerations, 
   toggleLike, 
   getSupabase,
@@ -189,6 +190,28 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSignOut = async () => {
+    await signOut();
+    setState(prev => ({ ...prev, currentUser: null, step: AppStep.HOME }));
+    setMyProfile(null);
+    setGalleryItems([]);
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!myProfile || !state.currentUser) return;
+    setIsSaving(true);
+    try {
+      await updateProfile(myProfile);
+      alert("HERO DATA UPDATED!");
+      loadProfiles();
+    } catch (err: any) {
+      alert("UPDATE FAILED: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleGuestLogin = () => {
     const guestUser: User = { id: 'guest-' + Date.now(), email: 'guest@hero.com' };
     setState(prev => ({ 
@@ -237,7 +260,6 @@ const App: React.FC = () => {
     try {
       const newId = state.editingId || crypto.randomUUID();
       const visibility = forceVisibility !== undefined ? forceVisibility : state.isPublic;
-      // Fix: Line 244 replaced 'gen.category' with 'state.selectedCategory?.name || 'Custom''
       await saveGeneration({
         id: newId,
         userId: state.currentUser.id,
@@ -427,6 +449,7 @@ const App: React.FC = () => {
     else if (state.step === AppStep.SUBCATEGORY_SELECT) setState(prev => ({ ...prev, step: AppStep.CATEGORY_SELECT }));
     else if (state.step === AppStep.RESULT) setState(prev => ({ ...prev, step: AppStep.SUBCATEGORY_SELECT }));
     else if (state.step === AppStep.CHECKOUT) setState(prev => ({ ...prev, step: AppStep.RESULT }));
+    else if (state.step === AppStep.PROFILE) setState(prev => ({ ...prev, step: AppStep.STUDIO }));
   };
 
   const handleLike = async (e: React.MouseEvent, generationId: string) => {
@@ -586,7 +609,10 @@ const App: React.FC = () => {
             <>
               <button onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.STUDIO })); }} className={`text-2xl font-comic uppercase tracking-wider transition-all ${state.step === AppStep.STUDIO ? 'text-[#e21c23] scale-110' : 'text-black hover:text-[#e21c23]'}`}>Create</button>
               <button onClick={() => { setIsFlipped(false); setState(prev => ({ ...prev, step: AppStep.GALLERY })); }} className={`text-2xl font-comic uppercase tracking-wider transition-all ${state.step === AppStep.GALLERY ? 'text-[#e21c23] scale-110' : 'text-black hover:text-[#e21c23]'}`}>Gallery</button>
-              <div className="w-12 h-12 bg-black border-4 border-black rounded-full overflow-hidden">
+              <div 
+                className="w-12 h-12 bg-black border-4 border-black rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform shadow-lg"
+                onClick={() => setState(prev => ({ ...prev, step: AppStep.PROFILE }))}
+              >
                 {myProfile?.avatar_url ? <img src={myProfile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-white font-black">{state.currentUser.id.startsWith('guest') ? 'G' : '?'}</div>}
               </div>
             </>
@@ -634,6 +660,123 @@ const App: React.FC = () => {
           </div>
           <div className="w-full max-w-6xl"><PhotoStep onPhotoSelected={handlePhotoSelected} /></div>
         </div>}
+
+        {state.step === AppStep.PROFILE && (
+          <div className="max-w-4xl w-full mx-auto p-8 md:p-16 animate-fade-in flex flex-col space-y-16">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-8 border-b-8 border-black pb-12">
+               <div className="transform -rotate-1">
+                 <h2 className="text-8xl md:text-10xl font-comic text-black italic uppercase tracking-tighter leading-none comic-text-3d">HERO <br/><span className="text-[#fde910]">PROFILE</span></h2>
+               </div>
+               <button onClick={handleSignOut} className="action-btn-red !bg-zinc-800 !text-white text-3xl">LOG OUT</button>
+            </div>
+
+            {myProfile && (
+              <form onSubmit={handleUpdateProfile} className="space-y-12">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                   <div className="space-y-8">
+                      <div className="bg-zinc-50 p-8 border-4 border-black shadow-[8px_8px_0px_#660000] space-y-6">
+                         <p className="text-2xl font-comic uppercase tracking-widest text-[#e21c23]">IDENTITY DATA</p>
+                         <div className="space-y-4">
+                            <label className="block text-sm font-black uppercase">Display Name</label>
+                            <input 
+                              type="text" 
+                              value={myProfile.display_name || ''} 
+                              onChange={e => setMyProfile({...myProfile, display_name: e.target.value})}
+                              className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold outline-none focus:bg-yellow-50" 
+                              placeholder="HERO NAME"
+                            />
+                         </div>
+                         <div className="space-y-4">
+                            <label className="block text-sm font-black uppercase">Avatar URL</label>
+                            <input 
+                              type="text" 
+                              value={myProfile.avatar_url || ''} 
+                              onChange={e => setMyProfile({...myProfile, avatar_url: e.target.value})}
+                              className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold outline-none focus:bg-yellow-50" 
+                              placeholder="IMAGE URL"
+                            />
+                         </div>
+                         <div className="pt-4 border-t border-zinc-200">
+                            <p className="text-sm font-bold text-zinc-400">EMAIL: {myProfile.email}</p>
+                         </div>
+                      </div>
+                   </div>
+
+                   <div className="space-y-8">
+                      <div className="bg-zinc-50 p-8 border-4 border-black shadow-[8px_8px_0px_#660000] space-y-6">
+                         <p className="text-2xl font-comic uppercase tracking-widest text-[#e21c23]">SOCIAL CHANNELS</p>
+                         <div className="space-y-4">
+                            <label className="block text-sm font-black uppercase flex items-center gap-2">
+                               <i className="fa-brands fa-instagram"></i> Instagram
+                            </label>
+                            <input 
+                              type="text" 
+                              value={myProfile.socials?.instagram || ''} 
+                              onChange={e => setMyProfile({...myProfile, socials: {...(myProfile.socials || {}), instagram: e.target.value}})}
+                              className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold outline-none focus:bg-yellow-50" 
+                              placeholder="@username"
+                            />
+                         </div>
+                         <div className="space-y-4">
+                            <label className="block text-sm font-black uppercase flex items-center gap-2">
+                               <i className="fa-brands fa-twitter"></i> Twitter / X
+                            </label>
+                            <input 
+                              type="text" 
+                              value={myProfile.socials?.twitter || ''} 
+                              onChange={e => setMyProfile({...myProfile, socials: {...(myProfile.socials || {}), twitter: e.target.value}})}
+                              className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold outline-none focus:bg-yellow-50" 
+                              placeholder="@username"
+                            />
+                         </div>
+                         <div className="space-y-4">
+                            <label className="block text-sm font-black uppercase flex items-center gap-2">
+                               <i className="fa-brands fa-discord"></i> Discord
+                            </label>
+                            <input 
+                              type="text" 
+                              value={myProfile.socials?.discord || ''} 
+                              onChange={e => setMyProfile({...myProfile, socials: {...(myProfile.socials || {}), discord: e.target.value}})}
+                              className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold outline-none focus:bg-yellow-50" 
+                              placeholder="username#0000"
+                            />
+                         </div>
+                         <div className="space-y-4">
+                            <label className="block text-sm font-black uppercase flex items-center gap-2">
+                               <i className="fa-solid fa-globe"></i> Website
+                            </label>
+                            <input 
+                              type="text" 
+                              value={myProfile.socials?.website || ''} 
+                              onChange={e => setMyProfile({...myProfile, socials: {...(myProfile.socials || {}), website: e.target.value}})}
+                              className="w-full bg-white border-4 border-black px-4 py-3 text-lg font-bold outline-none focus:bg-yellow-50" 
+                              placeholder="https://..."
+                            />
+                         </div>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-6 items-center">
+                   <button 
+                     type="submit" 
+                     disabled={isSaving}
+                     className="action-btn-yellow w-full py-8 text-5xl"
+                   >
+                     {isSaving ? 'UPDATING...' : 'SAVE HERO DATA!'}
+                   </button>
+                   <button 
+                     type="button"
+                     onClick={goBack}
+                     className="text-2xl font-comic uppercase text-zinc-400 hover:text-black transition-colors"
+                   >
+                     GO BACK
+                   </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
 
         {state.step === AppStep.RESULT && (
           <div className="grid grid-cols-1 lg:grid-cols-12 animate-fade-in bg-zinc-100 min-h-[calc(100vh-8rem)]">
